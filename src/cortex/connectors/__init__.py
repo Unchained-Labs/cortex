@@ -37,24 +37,46 @@ def builtin_connectors() -> dict[str, SyncFn]:
     return {"calendar_ics": ics_sync}
 
 
-def run_connectors(config: BrainConfig) -> dict[str, str]:
-    """Run every configured connector. Returns name -> "ok" | error text."""
+def run_connectors(
+    config: BrainConfig, settings_by_name: dict[str, dict] | None = None, only: str = ""
+) -> dict[str, str]:
+    """Run every configured connector. Returns name -> "ok" | error text.
+
+    ``settings_by_name`` overrides cortex.yaml (the dashboard passes the
+    merged, enabled-only set); ``only`` runs a single connector."""
     results: dict[str, str] = {}
     builtins = builtin_connectors()
-
-    for name, settings in config.connectors.items():
-        fn = builtins.get(name)
-        if fn is None:
-            results[name] = f"unknown built-in connector (known: {', '.join(sorted(builtins))})"
-            continue
-        results[name] = _run_one(fn, config.sources_dir / name, settings or {})
-
+    configured = config.connectors if settings_by_name is None else settings_by_name
     directory = config.connectors_dir
+    dropins = (
+        {p.stem for p in directory.glob("*.py") if not p.name.startswith("_")}
+        if directory.is_dir()
+        else set()
+    )
+
+    for name, settings in configured.items():
+        if only and name != only:
+            continue
+        if name in dropins:
+            continue  # handled below, with its module loaded
+        if name not in builtins:
+            # a name in cortex.yaml matching nothing is a typo, not a no-op
+            results[name] = (
+                f"unknown connector (built-ins: {', '.join(sorted(builtins))}; "
+                "drop-ins live in connectors/*.py)"
+            )
+            continue
+        results[name] = _run_one(builtins[name], config.sources_dir / name, settings or {})
+
     if directory.is_dir():
         for path in sorted(directory.glob("*.py")):
             if path.name.startswith("_"):
                 continue
             name = path.stem
+            if only and name != only:
+                continue
+            if settings_by_name is not None and name not in settings_by_name:
+                continue  # disabled in the dashboard
             try:
                 spec = importlib.util.spec_from_file_location(f"cortex_connector_{name}", path)
                 if spec is None or spec.loader is None:
@@ -67,7 +89,7 @@ def run_connectors(config: BrainConfig) -> dict[str, str]:
             except Exception as exc:  # noqa: BLE001
                 results[name] = str(exc)
                 continue
-            settings = dict(config.connectors.get(name) or {})
+            settings = dict(configured.get(name) or {})
             results[name] = _run_one(fn, config.sources_dir / name, settings)
 
     return results

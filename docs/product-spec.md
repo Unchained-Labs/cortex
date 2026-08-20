@@ -68,6 +68,34 @@ All responses JSON unless stated. Errors: `{"detail": str}` with 4xx/5xx.
   `@cortex`, the agent is invoked with recent channel context and posts its reply as
   author `cortex` (streamed over WS as it generates).
 
+### Extensions (role=admin only)
+
+Saving a plugin or connector **runs the author's code as the server user** —
+same trust level as a stdio MCP server. The UI must say this where code is edited.
+
+- `GET /api/extensions` → `{plugins: [E], skills: [E], connectors: [E], mcp_servers: [E],
+  load_errors: [str], mcp_errors: [str]}` where E is
+  `{kind, name, enabled, tools: [str], description, error, source, detail}`.
+  `source` is `"dashboard"` (editable), `"file"` (cortex.yaml, read-only here) or
+  `"builtin"`. `error` non-empty means it failed to load — show it, don't hide it.
+  For mcp, `detail` = `{transport, command, args, url, include, exclude, header_keys}` —
+  header *values* are never sent to the client.
+- `GET /api/extensions/scaffold?kind=plugin|connector|skill` → starter content
+  (`{code}` or `{description, instructions}`) so "New" opens something that runs.
+- `GET /api/extensions/source?kind=&name=` → `{kind, name, code}` for plugin/connector,
+  `{kind, name, description, instructions}` for skill. 404 if missing.
+- `PUT /api/extensions/{kind}` — body by kind:
+  plugin/connector `{name, code, settings?}`, skill `{name, description, instructions}`,
+  mcp `{spec: {name, transport, command?, args?, url?, headers?, include?, exclude?, enabled?}}`.
+  → `{name, tools?}`. **422 with the loader's own message** when the code will not load;
+  nothing is written in that case. On success the agent is rebuilt, so new tools are live
+  on the next turn without a restart.
+- `POST /api/extensions/{kind}/{name}/enabled` `{enabled}` → toggles without editing the file.
+- `POST /api/extensions/connector/{name}/settings` `{settings}` → merge over cortex.yaml.
+- `POST /api/extensions/connector/{name}/run` → `{name, result}` (`"ok"` or the error text),
+  then a re-index is queued.
+- `DELETE /api/extensions/{kind}/{name}` → `{ok}`. 422 for a cortex.yaml-defined MCP server.
+
 ### Admin (role=admin only)
 - `GET /api/admin/users` → `{users: [{username, role, created_at}]}`
 - `POST /api/admin/users` `{username, password, role}` → 201
@@ -105,7 +133,17 @@ Views (tabs in the header, brand lockup at left):
    `#tag` highlighted. Save = PUT with base_mtime; on 409 show a conflict banner.
    Edit/Preview toggle; autosave off, Ctrl-S saves.
 4. **Import** — zip upload or git URL/server path form, per the import endpoint.
-5. **Admin** (admins only) — user management + `/api/info` stats.
+5. **Extend** (admins only) — four sections (Plugins, Skills, Connectors, MCP servers).
+   Each row: name, enabled toggle, what it provides (tool names / description /
+   transport), and its error in `--ul-down` when it failed to load. Editing opens a
+   CodeMirror editor (python for plugin/connector, plain text for skill instructions)
+   with a Save that surfaces the 422 loader message inline — a plugin that will not
+   load must never look saved. Connectors additionally get a JSON settings box and a
+   "Run now" button showing the result. MCP servers get a form (transport, command +
+   args or url, header key/value rows, include/exclude); `source: "file"` rows render
+   read-only with a "defined in cortex.yaml" note. A visible warning states that
+   saving code executes it on the server.
+6. **Admin** (admins only) — user management + `/api/info` stats.
 6. **Sign-in** — username/password against /api/auth/login.
 
 Build: `npm run build` outputs to `../src/cortex/server/webdist/` (vite `outDir`,

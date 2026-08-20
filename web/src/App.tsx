@@ -7,9 +7,10 @@ import Chat from "./views/Chat";
 import Channels from "./views/Channels";
 import Vault from "./views/Vault";
 import ImportView from "./views/ImportView";
+import Extend from "./views/Extend";
 import Admin from "./views/Admin";
 
-export type Tab = "chat" | "channels" | "vault" | "import" | "admin";
+export type Tab = "chat" | "channels" | "vault" | "import" | "extend" | "admin";
 
 export interface VaultTarget {
   vault: string;
@@ -23,6 +24,7 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "channels", label: "Channels" },
   { id: "vault", label: "Vault" },
   { id: "import", label: "Import" },
+  { id: "extend", label: "Extend", adminOnly: true },
   { id: "admin", label: "Admin", adminOnly: true },
 ];
 
@@ -126,6 +128,11 @@ export default function App() {
         <div className={tab === "import" ? "view" : "view hidden"}>
           <ImportView />
         </div>
+        {isAdmin && (
+          <div className={tab === "extend" ? "view" : "view hidden"}>
+            <Extend active={tab === "extend"} />
+          </div>
+        )}
         {isAdmin && (
           <div className={tab === "admin" ? "view" : "view hidden"}>
             <Admin self={user.username} active={tab === "admin"} />

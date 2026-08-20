@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from cortex import auth, scope, vaults
+from cortex import auth, extensions, scope, vaults
 from cortex.brain import Brain
 from cortex.events import AgentEvent
 from cortex.memory.search import hybrid_search
@@ -76,6 +76,23 @@ class ImportRequest(BaseModel):
     vault: str
     git_url: str = ""
     src_path: str = ""
+
+
+class ExtensionSave(BaseModel):
+    name: str = ""
+    code: str = ""
+    description: str = ""
+    instructions: str = ""
+    settings: dict | None = None
+    spec: dict | None = None
+
+
+class EnabledBody(BaseModel):
+    enabled: bool
+
+
+class SettingsBody(BaseModel):
+    settings: dict
 
 
 # -- websocket fan-out ------------------------------------------------------
@@ -524,6 +541,123 @@ def build_app(brain: Brain) -> FastAPI:
                 },
             }
         )
+
+    # -- extensions (admin only) -------------------------------------------
+    #
+    # Saving a plugin or connector runs the author's code as the server user
+    # — the same trust level as configuring a stdio MCP server. Admin-only,
+    # and the UI says so.
+
+    async def _reload_agent() -> None:
+        """Rebuild the registry and the compiled graph so a saved extension
+        is live on the next turn without a restart."""
+        brain.load_extensions()
+        async with agent_lock:
+            old = state["runtime"]
+            fresh = brain.runtime()
+            await fresh.__aenter__()
+            state["runtime"] = fresh
+            if old is not None:
+                await old.__aexit__(None, None, None)
+
+    @app.get("/api/extensions")
+    def extensions_list(user: dict = Depends(admin_user)) -> dict:
+        payload = extensions.list_all(brain.config, brain.store)
+        payload["load_errors"] = brain.registry.load_errors
+        payload["mcp_errors"] = getattr(state["runtime"], "mcp_errors", [])
+        return payload
+
+    @app.get("/api/extensions/scaffold")
+    def extensions_scaffold(kind: str, user: dict = Depends(admin_user)) -> dict:
+        try:
+            return extensions.scaffold(kind)
+        except extensions.ExtensionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/extensions/source")
+    def extensions_source(kind: str, name: str, user: dict = Depends(admin_user)) -> dict:
+        try:
+            return extensions.read_source(brain.config, kind, name)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="no such extension") from exc
+        except extensions.ExtensionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.put("/api/extensions/{kind}")
+    async def extensions_save(
+        kind: str, body: ExtensionSave, user: dict = Depends(admin_user)
+    ) -> dict:
+        try:
+            if kind == "plugin":
+                tools = extensions.write_plugin(brain.config, body.name, body.code)
+                result = {"name": body.name, "tools": tools}
+            elif kind == "connector":
+                extensions.write_connector(brain.config, body.name, body.code)
+                if body.settings is not None:
+                    extensions.set_connector_settings(brain.store, body.name, body.settings)
+                result = {"name": body.name}
+            elif kind == "skill":
+                extensions.write_skill(
+                    brain.config, body.name, body.description, body.instructions
+                )
+                result = {"name": body.name}
+            elif kind == "mcp":
+                name = extensions.save_mcp_server(brain.config, brain.store, body.spec or {})
+                result = {"name": name}
+            else:
+                raise HTTPException(status_code=404, detail=f"unknown kind {kind!r}")
+        except extensions.ExtensionError as exc:
+            # a plugin that will not load is a 422 with the loader's words
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _reload_agent()
+        return result
+
+    @app.post("/api/extensions/{kind}/{name}/enabled")
+    async def extensions_enabled(
+        kind: str, name: str, body: EnabledBody, user: dict = Depends(admin_user)
+    ) -> dict:
+        try:
+            extensions.set_enabled(brain.config, brain.store, kind, name, body.enabled)
+        except extensions.ExtensionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _reload_agent()
+        return {"ok": True, "enabled": body.enabled}
+
+    @app.post("/api/extensions/connector/{name}/settings")
+    async def extensions_connector_settings(
+        name: str, body: SettingsBody, user: dict = Depends(admin_user)
+    ) -> dict:
+        try:
+            extensions.set_connector_settings(brain.store, name, body.settings)
+        except extensions.ExtensionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"ok": True}
+
+    @app.post("/api/extensions/connector/{name}/run")
+    async def extensions_connector_run(
+        name: str, user: dict = Depends(admin_user)
+    ) -> dict:
+        from cortex.connectors import run_connectors
+
+        settings = extensions.effective_connectors(brain.config, brain.store)
+        results = await asyncio.to_thread(
+            run_connectors, brain.config, settings, name
+        )
+        if name not in results:
+            raise HTTPException(status_code=404, detail="no such connector, or it is disabled")
+        reindex_wanted.set()
+        return {"name": name, "result": results[name]}
+
+    @app.delete("/api/extensions/{kind}/{name}")
+    async def extensions_delete(
+        kind: str, name: str, user: dict = Depends(admin_user)
+    ) -> dict:
+        try:
+            extensions.delete_extension(brain.config, brain.store, kind, name)
+        except extensions.ExtensionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _reload_agent()
+        return {"ok": True}
 
     # -- admin ------------------------------------------------------------
 

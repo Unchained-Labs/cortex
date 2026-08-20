@@ -99,14 +99,14 @@ class ToolRegistry:
         ]
 
     # -- discovery --------------------------------------------------------
-    def load_directory(self, directory: Path) -> None:
+    def load_directory(self, directory: Path, skip: set[str] | None = None) -> None:
         """Load drop-in plugins: every top-level ``*.py`` (not ``_``-prefixed)
         must expose ``register(registry)``. A broken file is recorded and
-        skipped, never fatal."""
+        skipped, never fatal. ``skip`` holds stems disabled in the dashboard."""
         if not directory.is_dir():
             return
         for path in sorted(directory.glob("*.py")):
-            if path.name.startswith("_"):
+            if path.name.startswith("_") or (skip and path.stem in skip):
                 continue
             try:
                 spec = importlib.util.spec_from_file_location(f"cortex_plugin_{path.stem}", path)

@@ -1,4 +1,4 @@
-"""The cortex CLI: setup, init, index, chat, serve, mcp, connectors, users, status."""
+"""The cortex CLI: setup, init, index, chat, serve, mcp, connectors, ext, users, status."""
 
 from __future__ import annotations
 
@@ -74,6 +74,9 @@ same content is reachable from the CLI (`cortex chat`) and from MCP clients
 - `skills/` — agentskills.io SKILL.md procedure folders
 - `plugins/` — drop-in tool plugins (*.py exposing register(registry))
 - `connectors/` — drop-in ingestion connectors (*.py exposing sync(out_dir, settings))
+
+Extensions are also managed from the dashboard's Extend panel (admin only)
+or with `cortex ext list|enable|disable|delete`.
 """
 
 KIND_PRESETS = {
@@ -84,6 +87,12 @@ KIND_PRESETS = {
     "anthropic": ("anthropic", "", "claude-sonnet-5", ""),
     "custom": ("openai", "", "", ""),
 }
+
+
+def extensions_kinds() -> tuple[str, ...]:
+    from cortex.extensions import KINDS
+
+    return KINDS
 
 
 def _brain(args: argparse.Namespace) -> Brain:
@@ -338,8 +347,10 @@ def cmd_mcp(args: argparse.Namespace) -> None:
 def cmd_connectors(args: argparse.Namespace) -> None:
     brain = _brain(args)
     from cortex.connectors import run_connectors
+    from cortex.extensions import effective_connectors
 
-    results = run_connectors(brain.config)
+    settings = effective_connectors(brain.config, brain.store)
+    results = run_connectors(brain.config, settings)
     if not results:
         print("no connectors configured (cortex.yaml connectors: block, or connectors/*.py)")
         return
@@ -351,6 +362,46 @@ def cmd_connectors(args: argparse.Namespace) -> None:
     print("run `cortex index` to pick up new source files")
     if failed:
         sys.exit(1)
+
+
+def cmd_ext(args: argparse.Namespace) -> None:
+    """List, enable, disable, or delete extensions from the terminal.
+
+    Creating plugins is deliberately not here: writing code belongs in an
+    editor or the dashboard panel, not in shell arguments."""
+    from cortex import extensions
+
+    brain = _brain(args)
+    if args.action == "list":
+        listing = extensions.list_all(brain.config, brain.store)
+        for section in ("plugins", "skills", "connectors", "mcp_servers"):
+            rows = listing[section]
+            print(f"\n{section} ({len(rows)}):")
+            for row in rows:
+                mark = " " if row["enabled"] else "-"
+                extra = ", ".join(row["tools"]) or row["description"] or ""
+                where = "" if row["source"] == "dashboard" else f" [{row['source']}]"
+                print(f"  {mark} {row['name']}{where}{'  ' + extra if extra else ''}")
+                if row["error"]:
+                    print(f"      error: {row['error']}")
+        for err in brain.registry.load_errors:
+            print(f"\nplugin load error: {err}")
+    else:
+        if not args.kind or not args.name:
+            sys.exit(f"usage: cortex ext {args.action} <kind> <name>")
+        try:
+            if args.action == "delete":
+                extensions.delete_extension(brain.config, brain.store, args.kind, args.name)
+                print(f"deleted {args.kind} {args.name}")
+            else:
+                enabled = args.action == "enable"
+                extensions.set_enabled(
+                    brain.config, brain.store, args.kind, args.name, enabled
+                )
+                print(f"{args.action}d {args.kind} {args.name}")
+        except extensions.ExtensionError as exc:
+            sys.exit(f"error: {exc}")
+    brain.close()
 
 
 def cmd_users(args: argparse.Namespace) -> None:
@@ -472,6 +523,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("action", choices=["run"])
     p.add_argument("--brain")
     p.set_defaults(func=cmd_connectors)
+
+    p = sub.add_parser("ext", help="list, enable, disable or delete extensions")
+    p.add_argument("action", choices=["list", "enable", "disable", "delete"])
+    p.add_argument("kind", nargs="?", default="", choices=["", *extensions_kinds()])
+    p.add_argument("name", nargs="?", default="")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_ext)
 
     p = sub.add_parser("users", help="manage dashboard accounts")
     p.add_argument("action", choices=["add", "list", "remove"])

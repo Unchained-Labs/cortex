@@ -154,3 +154,87 @@ def test_import_zip(client):
     assert res.json()["imported"] == 1
     got = client.get("/api/vault/file", params={"vault": "erwin", "path": "note.md"})
     assert got.json()["text"] == "# imported"
+
+
+PLUGIN_CODE = """\
+from cortex.plugins import ToolPlugin
+
+
+def register(registry):
+    registry.register(ToolPlugin(name="dice", description="roll", func=lambda: "4"))
+"""
+
+
+def test_extensions_are_admin_only(client):
+    signin(client, "sam")
+    assert client.get("/api/extensions").status_code == 403
+    assert client.put(
+        "/api/extensions/plugin", json={"name": "dice", "code": PLUGIN_CODE}
+    ).status_code == 403
+
+
+def test_plugin_save_lists_and_goes_live(client, brain):
+    signin(client, "erwin")
+    saved = client.put("/api/extensions/plugin", json={"name": "dice", "code": PLUGIN_CODE})
+    assert saved.status_code == 200
+    assert saved.json()["tools"] == ["dice"]
+
+    listed = client.get("/api/extensions").json()
+    assert [p["name"] for p in listed["plugins"]] == ["dice"]
+    # live in the registry without a restart
+    assert "dice" in client.get("/api/info").json()["tools"]
+
+    off = client.post("/api/extensions/plugin/dice/enabled", json={"enabled": False})
+    assert off.status_code == 200
+    assert "dice" not in client.get("/api/info").json()["tools"]
+
+    assert client.delete("/api/extensions/plugin/dice").status_code == 200
+    assert client.get("/api/extensions").json()["plugins"] == []
+
+
+def test_broken_plugin_is_rejected_with_the_loader_message(client):
+    signin(client, "erwin")
+    res = client.put("/api/extensions/plugin", json={"name": "bad", "code": "not python"})
+    assert res.status_code == 422
+    assert "failed to load" in res.json()["detail"]
+
+
+def test_skill_and_mcp_through_the_api(client):
+    signin(client, "erwin")
+    assert client.put(
+        "/api/extensions/skill",
+        json={"name": "review", "description": "weekly", "instructions": "1. Look."},
+    ).status_code == 200
+    source = client.get("/api/extensions/source", params={"kind": "skill", "name": "review"})
+    assert source.json()["instructions"].startswith("1. Look")
+
+    assert client.put(
+        "/api/extensions/mcp",
+        json={"spec": {"name": "ha", "transport": "http", "url": "http://ha.local/mcp"}},
+    ).status_code == 200
+    listed = client.get("/api/extensions").json()["mcp_servers"]
+    assert [m["name"] for m in listed] == ["ha"]
+
+    bad = client.put(
+        "/api/extensions/mcp", json={"spec": {"name": "nope", "transport": "stdio"}}
+    )
+    assert bad.status_code == 422
+
+
+def test_connector_settings_and_run(client, brain):
+    signin(client, "erwin")
+    code = "def sync(out_dir, settings):\n    (out_dir / 'n.md').write_text('hi')\n"
+    assert client.put(
+        "/api/extensions/connector",
+        json={"name": "demo", "code": code, "settings": {"enabled": True}},
+    ).status_code == 200
+    run = client.post("/api/extensions/connector/demo/run")
+    assert run.json() == {"name": "demo", "result": "ok"}
+    assert (brain.config.sources_dir / "demo" / "n.md").is_file()
+
+
+def test_scaffold_endpoint(client):
+    signin(client, "erwin")
+    assert "register" in client.get(
+        "/api/extensions/scaffold", params={"kind": "plugin"}
+    ).json()["code"]

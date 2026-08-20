@@ -57,6 +57,41 @@ export interface AdminUser {
   created_at: string;
 }
 
+export type ExtensionKind = "plugin" | "skill" | "connector" | "mcp";
+
+/** `detail` is kind-shaped: connectors carry `settings`, mcp the rest. */
+export interface ExtensionDetail {
+  settings?: Record<string, unknown>;
+  transport?: string;
+  command?: string;
+  args?: string[];
+  url?: string;
+  include?: string[];
+  exclude?: string[];
+  /** header names only — the server never sends their values */
+  header_keys?: string[];
+}
+
+export interface Extension {
+  kind: ExtensionKind;
+  name: string;
+  enabled: boolean;
+  tools: string[];
+  description: string;
+  error: string;
+  source: "dashboard" | "file" | "builtin";
+  detail: ExtensionDetail;
+}
+
+export interface ExtensionList {
+  plugins: Extension[];
+  skills: Extension[];
+  connectors: Extension[];
+  mcp_servers: Extension[];
+  load_errors: string[];
+  mcp_errors: string[];
+}
+
 export type WsEvent =
   | { type: "channel_message"; channel_id: string; message: ChannelMessage }
   | { type: "agent_partial"; channel_id: string; message_id: string; text: string }

@@ -104,6 +104,16 @@ CREATE TABLE IF NOT EXISTS channel_messages(
     author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS channel_messages_chan ON channel_messages(channel_id, id);
+CREATE TABLE IF NOT EXISTS ext_disabled(
+    kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (kind, name)
+);
+CREATE TABLE IF NOT EXISTS ext_mcp_servers(
+    name TEXT PRIMARY KEY, spec TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ext_connector_settings(
+    name TEXT PRIMARY KEY, settings TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 """
 
 
@@ -395,6 +405,82 @@ class Store:
                 (channel_id, author, body, at),
             )
         return cur.lastrowid or 0, at
+
+    # -- extensions -------------------------------------------------------
+    def is_disabled(self, kind: str, name: str) -> bool:
+        return (
+            self.db.execute(
+                "SELECT 1 FROM ext_disabled WHERE kind=? AND name=?", (kind, name)
+            ).fetchone()
+            is not None
+        )
+
+    def disabled_names(self, kind: str) -> set[str]:
+        return {
+            r["name"]
+            for r in self.db.execute("SELECT name FROM ext_disabled WHERE kind=?", (kind,))
+        }
+
+    def set_disabled(self, kind: str, name: str, disabled: bool) -> None:
+        with self.db:
+            if disabled:
+                self.db.execute(
+                    "INSERT OR IGNORE INTO ext_disabled(kind, name) VALUES(?,?)", (kind, name)
+                )
+            else:
+                self.db.execute(
+                    "DELETE FROM ext_disabled WHERE kind=? AND name=?", (kind, name)
+                )
+
+    def list_mcp_servers(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT name, spec, enabled FROM ext_mcp_servers ORDER BY name"
+        ).fetchall()
+
+    def upsert_mcp_server(self, name: str, spec: dict, enabled: bool) -> None:
+        import json
+
+        with self.db:
+            self.db.execute(
+                "INSERT INTO ext_mcp_servers(name, spec, enabled, updated_at) "
+                "VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET "
+                "spec=excluded.spec, enabled=excluded.enabled, updated_at=excluded.updated_at",
+                (name, json.dumps(spec), int(enabled), _now()),
+            )
+
+    def set_mcp_enabled(self, name: str, enabled: bool) -> None:
+        with self.db:
+            self.db.execute(
+                "UPDATE ext_mcp_servers SET enabled=?, updated_at=? WHERE name=?",
+                (int(enabled), _now(), name),
+            )
+
+    def delete_mcp_server(self, name: str) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM ext_mcp_servers WHERE name=?", (name,))
+
+    def connector_settings(self) -> dict[str, dict]:
+        import json
+
+        return {
+            r["name"]: json.loads(r["settings"])
+            for r in self.db.execute("SELECT name, settings FROM ext_connector_settings")
+        }
+
+    def set_connector_settings(self, name: str, settings: dict) -> None:
+        import json
+
+        with self.db:
+            self.db.execute(
+                "INSERT INTO ext_connector_settings(name, settings, updated_at) "
+                "VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET "
+                "settings=excluded.settings, updated_at=excluded.updated_at",
+                (name, json.dumps(settings), _now()),
+            )
+
+    def delete_connector_settings(self, name: str) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM ext_connector_settings WHERE name=?", (name,))
 
     def channel_messages(
         self, channel_id: int, before: int | None = None, limit: int = 50

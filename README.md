@@ -108,7 +108,26 @@ endpoint means full-text search that says so, not fake vector scores.
 
 A broken extension is reported and isolated, never fatal. Registration is
 not authorization: a tool that touches something sensitive keeps its own
-checks inside the callable. Cortex is also an MCP *server* —
+checks inside the callable.
+
+**Manage them from the dashboard.** The admin-only **Extend** panel lists
+every plugin, skill, connector and MCP server with what it provides, its
+load error if it has one, and an enable toggle that never edits your source
+file. You can write a plugin or connector in the browser: it is loaded
+before it is saved, so code that will not import is refused with the
+loader's own message instead of silently breaking the next turn, and a
+successful save rebuilds the agent so the new tool is live without a
+restart. Connectors get a settings box and a "Run now" button; MCP servers
+get a form. Servers defined in `cortex.yaml` show up read-only — the file
+stays the owner of what it declares.
+
+Saving a plugin or connector runs that code on the server as the cortex
+user. That is the same trust level as configuring a stdio MCP server, and it
+is why the panel is admin-only. From the terminal, `cortex ext list`,
+`cortex ext disable plugin <name>`, and `cortex ext delete` do the same
+management without the browser.
+
+Cortex is also an MCP *server* —
 `claude mcp add home-brain -- cortex mcp --brain ~/brain` gives Claude Code,
 Cursor, or Hermes the same tool registry, at box-owner scope.
 

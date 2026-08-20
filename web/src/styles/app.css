@@ -477,6 +477,156 @@ select { cursor: pointer; }
   overflow: auto;
 }
 
+/* ---- extend -------------------------------------------------------------- */
+
+.extend-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-8) 0;
+}
+.extend-warning { border-left-width: 3px; margin-bottom: var(--ul-space-4); }
+.extend-strip { align-items: flex-start; }
+.extend-strip .label { margin: 0 0 var(--ul-space-1); }
+.extend-foot { font-size: var(--ul-text-sm); margin-top: var(--ul-space-4); }
+
+.ext-section { margin-bottom: var(--ul-space-4); }
+.ext-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ul-space-3);
+  margin-bottom: var(--ul-space-3);
+}
+.ext-section-head h3 { margin: 0; }
+.ext-section > p { margin: 0; font-size: var(--ul-text-sm); }
+
+.ext-row {
+  padding: var(--ul-space-3) 0;
+  border-top: 1px solid var(--ul-line);
+}
+.ext-section-head + div .ext-row { border-top: 0; padding-top: 0; }
+
+.ext-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+}
+.ext-name { font-size: var(--ul-text-sm); color: var(--ul-heading); }
+.ext-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+}
+.ext-readonly { font-size: var(--ul-text-xs); }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  cursor: pointer;
+  font-size: var(--ul-text-xs);
+  color: var(--ul-muted);
+}
+.toggle input { accent-color: var(--ul-accent); cursor: pointer; margin: 0; }
+
+.ext-provides { margin-top: var(--ul-space-1); font-size: var(--ul-text-sm); }
+.ext-detail { font-size: var(--ul-text-xs); color: var(--ul-muted); }
+
+.pills { display: inline-flex; flex-wrap: wrap; gap: var(--ul-space-1); }
+.pill {
+  font-size: var(--ul-text-xs);
+  color: var(--ul-accent);
+  background: var(--ul-accent-wash);
+  border: 1px solid var(--ul-accent-dim);
+  border-radius: var(--ul-radius-pill);
+  padding: 0.05em 0.6em;
+}
+
+.ext-error {
+  margin: var(--ul-space-2) 0 0;
+  font-size: var(--ul-text-sm);
+  color: var(--ul-down);
+  overflow-wrap: break-word;
+}
+
+.ext-panel {
+  margin-top: var(--ul-space-3);
+  padding: var(--ul-space-3);
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+}
+.ext-panel .field { margin-bottom: var(--ul-space-2); }
+.ext-panel textarea { width: 100%; resize: vertical; font-size: var(--ul-text-xs); }
+.ext-panel-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-3);
+  font-size: var(--ul-text-sm);
+}
+.run-ok { color: var(--ul-up); }
+.run-fail { color: var(--ul-down); overflow-wrap: anywhere; }
+
+/* ---- extension drawer ---------------------------------------------------- */
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--ul-bg) 72%, transparent);
+}
+.drawer {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ul-bg-raised);
+  border-left: 1px solid var(--ul-line);
+}
+.drawer .editor-bar { flex: none; }
+.drawer-error {
+  flex: none;
+  margin: 0;
+  padding: var(--ul-space-2) var(--ul-space-4);
+  font-size: var(--ul-text-sm);
+  color: var(--ul-down);
+  background: var(--ul-down-wash);
+  border-left: 2px solid var(--ul-down);
+  overflow-wrap: break-word;
+}
+.drawer-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ul-space-4);
+  padding: var(--ul-space-3) var(--ul-space-4) 0;
+}
+.drawer-fields-top { align-items: flex-start; }
+.drawer-fields .field { flex: 1; min-width: 14em; margin-bottom: var(--ul-space-3); }
+.drawer-fields textarea { resize: vertical; font-size: var(--ul-text-xs); }
+.drawer-hint {
+  margin: 0 0 var(--ul-space-2);
+  padding: 0 var(--ul-space-4);
+  font-size: var(--ul-text-xs);
+}
+.drawer-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--ul-space-6); }
+.drawer-scroll > .label,
+.drawer-scroll > .field,
+.drawer-scroll > .btn { margin-left: var(--ul-space-4); margin-right: var(--ul-space-4); }
+
+.kv-row {
+  display: flex;
+  gap: var(--ul-space-2);
+  padding: 0 var(--ul-space-4) var(--ul-space-2);
+}
+.kv-row input { flex: 1; min-width: 0; font-size: var(--ul-text-sm); }
+
 /* ---- responsive ---------------------------------------------------------- */
 
 @media (max-width: 760px) {

@@ -136,7 +136,7 @@ class AgentRuntime:
             self.startup_error = str(exc)
             return self
         tools = adapt_registry(self.brain.registry)
-        mcp_tools, self.mcp_errors = await load_mcp_tools(self.brain.config.mcp_servers)
+        mcp_tools, self.mcp_errors = await load_mcp_tools(self.brain.mcp_servers())
         known = {t.name for t in tools}
         for tool in mcp_tools:
             if tool.name in known:

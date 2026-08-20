@@ -190,6 +190,18 @@ roles:
     sensitive keeps its own checks inside the callable. Remembered facts are brain-wide by
     design — a household brain wants "we water the rosemary on Fridays" visible to everyone,
     and the agent is told never to remember one person's private secrets.</p>
+    <h3>Managed from the dashboard</h3>
+    <p class="narrow">The admin-only <strong>Extend</strong> panel lists every plugin, skill,
+    connector and MCP server with what it provides and its load error if it has one. Write a
+    plugin in the browser and it is loaded before it is saved — code that will not import is
+    refused with the loader's own message rather than breaking the next turn — then the agent
+    is rebuilt so the new tool is live without a restart. Toggling one off never edits your
+    source file, and anything declared in <code>cortex.yaml</code> stays read-only there.</p>
+    <div class="note warn">
+      <p>Saving a plugin or connector runs that code on the server as the cortex user — the
+      same trust level as configuring a stdio MCP server. That is why the panel is admin-only.
+      <code>cortex ext list|enable|disable|delete</code> does the same from a terminal.</p>
+    </div>
   </div>
 </section>
 

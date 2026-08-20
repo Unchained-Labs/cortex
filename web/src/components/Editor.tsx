@@ -50,9 +50,19 @@ interface Props {
   onChange: (text: string) => void;
   onSave: () => void;
   readOnly?: boolean;
+  /** "plain" drops the markdown mode. Read with docKey — a change of mode
+   *  only takes effect when the document identity changes too. */
+  language?: "markdown" | "plain";
 }
 
-export default function Editor({ docKey, initialText, onChange, onSave, readOnly }: Props) {
+export default function Editor({
+  docKey,
+  initialText,
+  onChange,
+  onSave,
+  readOnly,
+  language = "markdown",
+}: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const callbacks = useRef({ onChange, onSave });
@@ -74,7 +84,7 @@ export default function Editor({ docKey, initialText, onChange, onSave, readOnly
           },
         ]),
         basicSetup,
-        markdown({ base: markdownLanguage }),
+        ...(language === "plain" ? [] : [markdown({ base: markdownLanguage })]),
         syntaxHighlighting(oneDarkHighlightStyle),
         brandTheme,
         EditorView.lineWrapping,

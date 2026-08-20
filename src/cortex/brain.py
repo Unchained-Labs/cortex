@@ -30,15 +30,36 @@ class Brain:
         self.config: BrainConfig = load_config(root)
         self.store = Store(self.config.db_path)
         self.obs = Obs(self.config.usage_path)
-        self.skills = load_skills(self.config.skills_dir)
+        self.skills: list = []
         self.registry = ToolRegistry()
-        register_builtin(self.registry, self)
-        register_skill_tool(self.registry, self.skills)
-        self.registry.load_directory(self.config.plugins_dir)
-        self.registry.load_entry_points()
+        self.load_extensions()
         self._chat_model: BaseChatModel | None = None
         self._embedder: Embedder | None = None
         self._embedder_checked = False
+
+    def load_extensions(self) -> None:
+        """(Re)build the tool registry and skill shelf from disk + database.
+
+        Called at startup and again whenever the dashboard edits an
+        extension, so a new plugin is live without restarting the server."""
+        self.skills = [
+            s
+            for s in load_skills(self.config.skills_dir)
+            if not self.store.is_disabled("skill", s.name)
+        ]
+        registry = ToolRegistry()
+        register_builtin(registry, self)
+        register_skill_tool(registry, self.skills)
+        registry.load_directory(
+            self.config.plugins_dir, skip=self.store.disabled_names("plugin")
+        )
+        registry.load_entry_points()
+        self.registry = registry
+
+    def mcp_servers(self) -> list:
+        from cortex.extensions import effective_mcp_servers
+
+        return effective_mcp_servers(self.config, self.store)
 
     def close(self) -> None:
         self.store.close()
