@@ -21,7 +21,7 @@ changes between minor versions. The index and checkpoint formats are
 disposable caches — deleting `.cortex/` loses conversations, never notes.
 
 ```sh
-pip install cortex-brain
+pip install cortxai
 cortex setup                 # wizard: brain dir, model endpoint, admin account
 cortex serve --host 0.0.0.0  # dashboard on :8642
 ```
@@ -158,12 +158,13 @@ calibration. Telemetry never makes a call fail.
 
 ```sh
 uv venv --python 3.12 && uv pip install -e '.[dev]'
-.venv/bin/pytest                    # 83 tests
+.venv/bin/pytest                    # 102 tests
 .venv/bin/ruff check src tests
 cd web && npm install && npm run dev   # SPA dev server, proxies to :8642
 ```
 
-The frontend contract lives in [docs/product-spec.md](docs/product-spec.md).
+The frontend contract lives in [docs/product-spec.md](docs/product-spec.md);
+cutting a release is [RELEASING.md](RELEASING.md).
 
 Docs: [unchained-labs.github.io/cortex](https://unchained-labs.github.io/cortex/) ·
 Brand: [Unchained-Labs/branding](https://github.com/Unchained-Labs/branding) ·

@@ -1,0 +1,174 @@
+name: Release
+
+# Tag-driven: `git tag v0.2.0 && git push origin v0.2.0` builds, verifies,
+# publishes to PyPI and opens the GitHub release. Run it by hand first with
+# `dry_run: true` (or against TestPyPI) to check the artifacts without
+# spending the version number — a PyPI version can never be reused.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and check only — publish nothing"
+        type: boolean
+        default: true
+      testpypi:
+        description: "Publish to TestPyPI instead of PyPI"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The dashboard ships inside the wheel, so it is rebuilt here rather
+      # than trusted from the committed copy: a release must not carry a
+      # stale UI because someone forgot to run the build.
+      - name: Build the dashboard
+        run: npm ci && npm run build
+        working-directory: web
+
+      - name: Fail if the committed dashboard is stale
+        run: |
+          if ! git diff --quiet -- src/cortex/server/webdist; then
+            echo "::error::src/cortex/server/webdist differs from a fresh build."
+            echo "Run 'cd web && npm run build' and commit the result."
+            git diff --stat -- src/cortex/server/webdist
+            exit 1
+          fi
+
+      - name: Check the tag matches the packaged version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python -m pip install --quiet hatchling
+          version=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pyproject version $version"
+            exit 1
+          fi
+          echo "releasing $version"
+
+      - name: Test the code being shipped
+        run: |
+          python -m pip install --quiet -e '.[dev]'
+          ruff check src tests
+          pytest -q
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --quiet build twine
+          python -m build
+          python -m twine check dist/*
+
+      # A wheel without the dashboard installs but serves nothing, and that
+      # is invisible until someone opens the page. Assert it is in there.
+      - name: Assert the dashboard is inside the wheel
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          missing = [
+              what
+              for what, ok in {
+                  "webdist/index.html": any(n.endswith("webdist/index.html") for n in names),
+                  "webdist/app/*.js": any("webdist/app/" in n and n.endswith(".js") for n in names),
+                  "server/web/tokens.css": any(n.endswith("server/web/tokens.css") for n in names),
+              }.items()
+              if not ok
+          ]
+          if missing:
+              sys.exit(f"::error::wheel is missing {missing}")
+          print(f"wheel carries {len([n for n in names if 'webdist' in n])} dashboard files")
+          PY
+
+      - name: Smoke-test the built wheel
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/cortex --version
+          /tmp/smoke/bin/cortex setup /tmp/smoke-brain --non-interactive \
+            --admin-user ci --admin-password ci-password-123
+          /tmp/smoke/bin/cortex index --brain /tmp/smoke-brain
+          /tmp/smoke/bin/cortex serve --brain /tmp/smoke-brain --port 8642 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8642/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8642/health
+          # the served page must reference the hashed bundle, not the fallback
+          curl -fsS http://127.0.0.1:8642/ | grep -q '/app/index-' \
+            || { echo "::error::served page has no dashboard bundle"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: github.event_name == 'push' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ (github.event_name == 'workflow_dispatch' && inputs.testpypi) && 'testpypi' || 'pypi' }}
+      url: ${{ (github.event_name == 'workflow_dispatch' && inputs.testpypi) && 'https://test.pypi.org/p/cortxai' || 'https://pypi.org/p/cortxai' }}
+    permissions:
+      id-token: write # trusted publishing — no API token is stored anywhere
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ (github.event_name == 'workflow_dispatch' && inputs.testpypi) && 'https://test.pypi.org/legacy/' || '' }}
+
+  github-release:
+    name: Create the GitHub release
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish the release with its changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # pull just this version's section out of CHANGELOG.md
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "See CHANGELOG.md for the full list of changes." > notes.md
+          fi
+          printf '\n\n---\n\n`pip install cortxai==%s`\n' "$version" >> notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "cortex $GITHUB_REF_NAME" \
+            --notes-file notes.md

@@ -173,5 +173,5 @@ warning on failure and on public endpoints) → chat + embed model names → adm
 username/password → port. Writes cortex.yaml, creates the brain layout and the admin
 user, prints the serve command. Non-interactive via flags for scripting.
 `install.sh` = curl-able bootstrap: checks python3.11+, pipx/venv installs
-cortex-brain, runs `cortex setup`. Dockerfile + docker-compose.yml build the SPA and
+cortxai, runs `cortex setup`. Dockerfile + docker-compose.yml build the SPA and
 run `cortex serve --host 0.0.0.0` with the brain in a volume.

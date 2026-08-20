@@ -3,14 +3,34 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cortex-brain"
+name = "cortxai"
 version = "0.2.0"
 description = "A self-hosted brain for your home, your company, or any activity: pluggable local or cloud LLMs, hybrid memory, and an expandable plugin surface."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [{ name = "Unchained Labs" }]
-keywords = ["agent", "assistant", "mcp", "rag", "self-hosted"]
+keywords = [
+    "agent", "assistant", "mcp", "rag", "self-hosted", "langgraph",
+    "obsidian", "knowledge-base", "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+    "Topic :: Office/Business :: Groupware",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
     "httpx>=0.27",
     "pyyaml>=6.0",
@@ -29,7 +49,10 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://unchained-labs.github.io/cortex/"
+Documentation = "https://unchained-labs.github.io/cortex/"
 Repository = "https://github.com/Unchained-Labs/cortex"
+Changelog = "https://github.com/Unchained-Labs/cortex/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Unchained-Labs/cortex/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -43,6 +66,30 @@ cortex = "cortex.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cortex"]
+# The built dashboard ships in the wheel: `pip install cortxai` must serve a
+# working UI without node. Hatch skips VCS-ignored files by default, and the
+# repo ignores dist/ globally, so webdist is force-included here.
+artifacts = ["src/cortex/server/webdist/**"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/cortex/**",
+    "tests/**",
+    "web/src/**",
+    "web/package.json",
+    "web/package-lock.json",
+    "web/index.html",
+    "web/vite.config.ts",
+    "web/tsconfig.json",
+    "docs/product-spec.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "install.sh",
+    "Dockerfile",
+    "docker-compose.yml",
+]
+artifacts = ["src/cortex/server/webdist/**"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

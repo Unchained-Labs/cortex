@@ -20,15 +20,15 @@ if [ -z "$PY" ]; then
 fi
 
 if need pipx; then
-  pipx install --force cortex-brain
+  pipx install --force cortxai
   echo "installed with pipx"
 elif need uv; then
-  uv tool install --force cortex-brain
+  uv tool install --force cortxai
   echo "installed with uv tool"
 else
   VENVDIR="${CORTEX_VENV:-$HOME/.local/share/cortex-venv}"
   "$PY" -m venv "$VENVDIR"
-  "$VENVDIR/bin/pip" install --quiet --upgrade pip cortex-brain
+  "$VENVDIR/bin/pip" install --quiet --upgrade pip cortxai
   mkdir -p "$HOME/.local/bin"
   ln -sf "$VENVDIR/bin/cortex" "$HOME/.local/bin/cortex"
   echo "installed into $VENVDIR (symlinked to ~/.local/bin/cortex)"
