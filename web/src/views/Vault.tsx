@@ -84,6 +84,10 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
 
   const vaultRef = useRef(vault);
   vaultRef.current = vault;
+  // Ctrl-S reaches both the CodeMirror keymap and the container handler in
+  // the same keystroke; without this guard the second concurrent save races
+  // the first and 409s against its own sibling.
+  const savingRef = useRef(false);
   const openPathRef = useRef(openPath);
   openPathRef.current = openPath;
   const dirty = text !== savedText;
@@ -187,6 +191,8 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
       const v = vaultRef.current;
       const p = openPathRef.current;
       if (!v || !p || (!p.endsWith(".md") && !p.endsWith(".txt"))) return;
+      if (savingRef.current) return;
+      savingRef.current = true;
       setError(null);
       try {
         const body: Record<string, unknown> = { vault: v, path: p, text };
@@ -203,6 +209,8 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
         } else {
           setError(e instanceof Error ? e.message : "save failed");
         }
+      } finally {
+        savingRef.current = false;
       }
     },
     [text, baseMtime],

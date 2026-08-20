@@ -8,13 +8,40 @@ never fakes a vector score.
 
 from __future__ import annotations
 
+import functools
 import re
 import sqlite3
 import struct
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
 from cortex.memory.chunking import Chunk
+
+
+def _serialized(cls):
+    """Wrap every Store method in the instance lock.
+
+    The connection is shared across the server's worker threads and the
+    event loop. CPython's sqlite3 serializes individual C calls, but a
+    ``with self.db`` transaction in one thread interleaving with reads in
+    another still raises "bad parameter or other API misuse" — so access is
+    serialized wholesale. At this scale the lock is never contended enough
+    to matter."""
+    for name, fn in list(vars(cls).items()):
+        if name.startswith("__") or isinstance(fn, staticmethod) or not callable(fn):
+            continue
+
+        def wrap(inner):
+            @functools.wraps(inner)
+            def locked(self, *args, **kwargs):
+                with self._lock:
+                    return inner(self, *args, **kwargs)
+
+            return locked
+
+        setattr(cls, name, wrap(fn))
+    return cls
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -98,12 +125,13 @@ def fts_query(user_query: str) -> str:
     return " ".join(f'"{t}"' for t in terms)
 
 
+@_serialized
 class Store:
     def __init__(self, path: Path):
+        self._lock = threading.RLock()
         path.parent.mkdir(parents=True, exist_ok=True)
-        # check_same_thread=False: the HTTP server calls from a worker-thread
-        # pool. CPython's sqlite3 runs in serialized threading mode, so the
-        # connection itself is safe to share.
+        # check_same_thread=False + the class-level lock: the HTTP server
+        # calls from a worker-thread pool and the event loop concurrently.
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")

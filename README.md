@@ -8,6 +8,14 @@ A self-hosted brain for a household or a team: a dashboard where people chat
 with each other and with an agent that has read their shared notes — on your
 own model, on your own machine.
 
+<div align="center">
+  <a href="https://unchained-labs.github.io/cortex/#film">
+    <img src="docs/assets/cortex-demo.gif" width="720" alt="cortex demo — ask the agent, watch the tool call stream, get a cited answer">
+  </a>
+  <br><sub>Real product on film — dashboard, agent, and streaming are the shipped code; only the
+  model is scripted (<code>docs/promo/</code> rebuilds it). <a href="https://unchained-labs.github.io/cortex/#film">The full 60-second film →</a></sub>
+</div>
+
 **Status: alpha.** The API and config surface are settling; expect breaking
 changes between minor versions. The index and checkpoint formats are
 disposable caches — deleting `.cortex/` loses conversations, never notes.

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>cortex promo cards</title>
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/brand.css">
+<style>
+  html, body { height: 100%; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; background: var(--ul-bg);
+  }
+  .card-wrap { max-width: 900px; padding: 0 3rem; }
+  .card-wrap img.lockup { height: 34px; margin-bottom: 2.2rem; }
+  h1 {
+    font-size: 3.4rem; line-height: 1.1; margin: 0 0 1.1rem;
+    letter-spacing: var(--ul-track-display);
+  }
+  .sub { font-size: 1.25rem; color: var(--ul-body); max-width: 40ch; margin: 0 auto; }
+  .kicker {
+    font-family: var(--ul-font-display); font-size: 0.85rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: var(--ul-track-label);
+    color: var(--ul-accent); margin-bottom: 1.2rem;
+  }
+  .cmd {
+    display: inline-block; margin-top: 2rem; font-family: var(--ul-font-mono);
+    font-size: 1.15rem; color: var(--ul-heading); background: var(--ul-bg-inset);
+    border: 1px solid var(--ul-line-strong); border-radius: var(--ul-radius);
+    padding: 0.7em 1.3em;
+  }
+  .url { margin-top: 1.4rem; color: var(--ul-muted); font-family: var(--ul-font-mono); }
+</style>
+</head>
+<body>
+<div class="card-wrap" id="card"></div>
+<script>
+const CARDS = {
+  intro: {
+    lockup: true,
+    h: "A brain your whole household can talk to.",
+    sub: "Shared vaults, peer chat, and an agent that reads your notes — on a model you run yourself.",
+  },
+  chat: { k: "01 · Ask", h: "It searches before it answers.",
+          sub: "Hybrid retrieval over your notes, tool calls streamed live, every answer cited." },
+  vault: { k: "02 · Write", h: "Your vault, Obsidian-style.",
+           sub: "Shared and personal vaults — callouts, tasks, wikilinks, edited in the browser." },
+  channels: { k: "03 · Together", h: "Chat with your people — and @cortex.",
+              sub: "Peer channels over WebSocket. The agent answers from the shared vault only." },
+  extend: { k: "04 · Expand", h: "Every capability is a plugin.",
+            sub: "Tool plugins · MCP servers · skills · connectors — on Ollama, OpenRouter, LiteLLM or Anthropic." },
+  outro: { lockup: true, h: "cortex", sub: "Self-hosted. Your model. MIT.",
+           cmd: "pip install cortex-brain", url: "unchained-labs.github.io/cortex" },
+};
+const card = CARDS[new URLSearchParams(location.search).get("card")] || CARDS.intro;
+const el = document.getElementById("card");
+let html = "";
+if (card.lockup) html += '<img class="lockup" src="../assets/lockup-horizontal.svg" alt="Unchained Labs">';
+if (card.k) html += `<div class="kicker">${card.k}</div>`;
+html += `<h1>${card.h}</h1><p class="sub">${card.sub}</p>`;
+if (card.cmd) html += `<div><span class="cmd">${card.cmd}</span></div>`;
+if (card.url) html += `<div class="url">${card.url}</div>`;
+el.innerHTML = html;
+</script>
+</body>
+</html>
