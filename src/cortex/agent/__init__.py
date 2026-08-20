@@ -1,3 +1,3 @@
-from cortex.agent.loop import run_turn
+from cortex.agent.graph import AgentRuntime
 
-__all__ = ["run_turn"]
+__all__ = ["AgentRuntime"]

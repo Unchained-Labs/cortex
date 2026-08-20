@@ -1,14 +1,16 @@
-"""The cortex CLI: init, index, chat, serve, mcp, connectors, keys, status."""
+"""The cortex CLI: setup, init, index, chat, serve, mcp, connectors, users, status."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import getpass
 import sys
 from pathlib import Path
 
-from cortex import __version__
-from cortex import keys as keymod
+import httpx
+
+from cortex import __version__, auth
 from cortex.brain import Brain
 from cortex.config import CONFIG_NAME, ConfigError, find_brain
 from cortex.events import AgentEvent
@@ -20,25 +22,21 @@ name: {name}
 # Optional extra personality, appended to the system prompt verbatim.
 persona: ""
 
-# Model endpoints. kind "openai" speaks the OpenAI-compatible API
-# (Ollama, vLLM, LM Studio, OpenRouter, OpenAI); kind "anthropic" speaks
-# the Anthropic Messages API. Secrets belong in env vars, not this file.
+# Model endpoints. Kinds: openai (any OpenAI-compatible endpoint — Ollama,
+# vLLM, LM Studio), openrouter (base_url optional), litellm (your LiteLLM
+# proxy), anthropic. Secrets belong in env vars, not this file.
 providers:
-  local:
-    kind: openai
+  {provider_name}:
+    kind: {kind}
     base_url: "{base_url}"
-    chat_model: "{chat_model}"
+    {key_line}chat_model: "{chat_model}"
     embed_model: "{embed_model}"
-  # claude:
-  #   kind: anthropic
-  #   api_key_env: ANTHROPIC_API_KEY
-  #   chat_model: claude-sonnet-5
 
-# Which provider serves which role. Without an embed role (or embed_model),
-# search degrades to full-text and says so.
+# Which provider serves which role. Chat and embeddings can differ; without
+# an embed role (or embed_model), search degrades to full-text and says so.
 roles:
-  chat: local
-  embed: local
+  chat: {provider_name}
+  embed: {provider_name}
 
 # External MCP servers to consume as extra tools.
 # mcp_servers:
@@ -58,26 +56,34 @@ roles:
 #       home: "https://calendar.example/private-abc.ics"
 #     days_ahead: 30
 
-# Extra directories to index besides notes/ and sources/.
+# Extra directories to index besides vaults/ and sources/.
 # extra_paths:
 #   - ~/projects/journal
-
-server:
-  auth: none   # "none" = loopback only; "key" = require a ctx_ Bearer key
 """
 
 WELCOME_NOTE = """\
 # Welcome to your brain
 
-This folder is a cortex brain. Drop markdown into `notes/`, run
-`cortex index`, and ask questions with `cortex chat`.
+This folder is a cortex brain. The dashboard lives at `cortex serve`; the
+same content is reachable from the CLI (`cortex chat`) and from MCP clients
+(`cortex mcp`).
 
-- `notes/` — yours to organize; an Obsidian vault clone works as-is
-- `sources/` — connector output lands here, one folder per connector
+- `vaults/shared/` — everyone's notes; an Obsidian vault import lands here
+- `vaults/<user>/` — each user's private vault
+- `sources/` — connector output, one folder per connector
 - `skills/` — agentskills.io SKILL.md procedure folders
 - `plugins/` — drop-in tool plugins (*.py exposing register(registry))
 - `connectors/` — drop-in ingestion connectors (*.py exposing sync(out_dir, settings))
 """
+
+KIND_PRESETS = {
+    "ollama": ("openai", "http://localhost:11434/v1", "qwen3", "nomic-embed-text"),
+    "vllm": ("openai", "http://localhost:8000/v1", "", ""),
+    "openrouter": ("openrouter", "https://openrouter.ai/api/v1", "openrouter/auto", ""),
+    "litellm": ("litellm", "http://localhost:4000", "", ""),
+    "anthropic": ("anthropic", "", "claude-sonnet-5", ""),
+    "custom": ("openai", "", "", ""),
+}
 
 
 def _brain(args: argparse.Namespace) -> Brain:
@@ -87,30 +93,146 @@ def _brain(args: argparse.Namespace) -> Brain:
         sys.exit(f"error: {exc}")
 
 
-def cmd_init(args: argparse.Namespace) -> None:
-    root = Path(args.path).expanduser().resolve()
-    config_path = root / CONFIG_NAME
-    if config_path.exists():
-        sys.exit(f"{config_path} already exists; edit it instead")
-    for sub in ("notes", "sources", "skills", "plugins", "connectors", ".cortex"):
+def _scaffold(root: Path, config_text: str) -> None:
+    for sub in ("vaults/shared", "sources", "skills", "plugins", "connectors", ".cortex"):
         (root / sub).mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        CONFIG_TEMPLATE.format(
-            name=args.name or root.name,
-            base_url=args.provider_url,
-            chat_model=args.chat_model,
-            embed_model=args.embed_model,
-        ),
-        encoding="utf-8",
-    )
-    (root / "notes" / "welcome.md").write_text(WELCOME_NOTE, encoding="utf-8")
+    (root / CONFIG_NAME).write_text(config_text, encoding="utf-8")
+    welcome = root / "vaults" / "shared" / "welcome.md"
+    if not welcome.exists():
+        welcome.write_text(WELCOME_NOTE, encoding="utf-8")
     gitignore = root / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(".cortex/\n", encoding="utf-8")
-    print(f"Brain created at {root}")
-    print(f"1. Edit {config_path} (model endpoint and names)")
-    print(f"2. cortex index --brain {root}")
-    print(f"3. cortex chat --brain {root}")
+
+
+def _render_config(
+    name: str, kind: str, base_url: str, chat_model: str, embed_model: str
+) -> str:
+    key_line = ""
+    if kind == "anthropic":
+        key_line = "api_key_env: ANTHROPIC_API_KEY\n    "
+    elif kind == "openrouter":
+        key_line = "api_key_env: OPENROUTER_API_KEY\n    "
+    return CONFIG_TEMPLATE.format(
+        name=name,
+        provider_name="claude" if kind == "anthropic" else "local"
+        if kind in ("openai",) else kind,
+        kind=kind,
+        base_url=base_url,
+        key_line=key_line,
+        chat_model=chat_model,
+        embed_model=embed_model,
+    )
+
+
+def _ping_models(base_url: str) -> str | None:
+    """Best-effort reachability check; returns an error string or None."""
+    try:
+        res = httpx.get(f"{base_url.rstrip('/')}/models", timeout=5)
+    except httpx.HTTPError as exc:
+        return str(exc)
+    if res.status_code >= 500:
+        return f"HTTP {res.status_code}"
+    return None
+
+
+def _ask(prompt: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    value = input(f"{prompt}{suffix}: ").strip()
+    return value or default
+
+
+def cmd_setup(args: argparse.Namespace) -> None:
+    """Interactive wizard: brain, endpoint, models, admin account, done."""
+    interactive = sys.stdin.isatty() and not args.non_interactive
+    root = Path(args.path or (_ask("Brain directory", str(Path.home() / "brain"))
+                              if interactive else "")).expanduser().resolve()
+    if not str(root) or str(root) == str(Path.home()):
+        sys.exit("error: give the brain its own directory")
+    if (root / CONFIG_NAME).exists():
+        print(f"{root} already holds a brain; keeping its cortex.yaml")
+        brain = Brain(root)
+    else:
+        if interactive:
+            print("\nWhere does the model run?")
+            for i, key in enumerate(KIND_PRESETS, 1):
+                print(f"  {i}. {key}")
+            pick = _ask("Endpoint kind", "1")
+            kinds = list(KIND_PRESETS)
+            kind_key = kinds[int(pick) - 1] if pick.isdigit() and 0 < int(pick) <= len(kinds) \
+                else (pick if pick in KIND_PRESETS else "custom")
+        else:
+            kind_key = args.kind
+        kind, default_url, default_chat, default_embed = KIND_PRESETS[kind_key]
+        base_url = args.base_url or (
+            _ask("Base URL", default_url) if interactive else default_url
+        )
+        chat_model = args.chat_model or (
+            _ask("Chat model", default_chat) if interactive else default_chat
+        )
+        embed_model = args.embed_model if args.embed_model is not None else (
+            _ask("Embedding model (empty = full-text search only)", default_embed)
+            if interactive else default_embed
+        )
+        name = args.name or (_ask("Brain name", root.name) if interactive else root.name)
+        if base_url:
+            error = _ping_models(base_url)
+            if error:
+                print(f"warning: {base_url}/models not reachable ({error}) — continuing;"
+                      " fix cortex.yaml later", file=sys.stderr)
+        _scaffold(root, _render_config(name, kind, base_url, chat_model, embed_model))
+        brain = Brain(root)
+        warning = brain.warn_if_public("chat")
+        if warning:
+            print(f"warning: {warning}", file=sys.stderr)
+
+    if brain.store.count_users() == 0:
+        print("\nCreate the first (admin) dashboard account.")
+        while True:
+            username = (args.admin_user or
+                        (_ask("Admin username", getpass.getuser().lower())
+                         if interactive else "admin")).strip().lower()
+            try:
+                auth.validate_username(username)
+                break
+            except auth.AuthError as exc:
+                if not interactive:
+                    sys.exit(f"error: {exc}")
+                print(f"  {exc}")
+                args.admin_user = None
+        password = args.admin_password or (
+            getpass.getpass("Admin password (8+ chars): ") if interactive else ""
+        )
+        if len(password) < 8:
+            sys.exit("error: password must be 8+ characters")
+        pw_hash, salt = auth.hash_password(password)
+        brain.store.add_user(username, pw_hash, salt, "admin")
+        (brain.config.vaults_dir / username).mkdir(parents=True, exist_ok=True)
+        print(f"admin account {username!r} created")
+
+    brain.close()
+    print(f"\nBrain ready at {root}")
+    print(f"  cortex index --brain {root}")
+    print(f"  cortex serve --brain {root} --host 0.0.0.0   # dashboard on :8642")
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    root = Path(args.path).expanduser().resolve()
+    if (root / CONFIG_NAME).exists():
+        sys.exit(f"{root / CONFIG_NAME} already exists; edit it instead")
+    kind, default_url, default_chat, default_embed = KIND_PRESETS["ollama"]
+    _scaffold(
+        root,
+        _render_config(
+            args.name or root.name,
+            kind,
+            args.provider_url or default_url,
+            args.chat_model or default_chat,
+            args.embed_model if args.embed_model is not None else default_embed,
+        ),
+    )
+    print(f"Brain created at {root} — run `cortex setup {root}` to add accounts,")
+    print(f"or edit {root / CONFIG_NAME} and run `cortex index --brain {root}`.")
 
 
 def cmd_index(args: argparse.Namespace) -> None:
@@ -118,10 +240,8 @@ def cmd_index(args: argparse.Namespace) -> None:
     warning = brain.warn_if_public("embed")
     if warning:
         print(f"warning: {warning}", file=sys.stderr)
-    embedder = brain.provider("embed")
+    embedder = brain.embedder()
     if embedder is not None:
-        # One probe before touching files: an unreachable embed endpoint
-        # degrades the run to full-text, it does not crash it.
         from cortex.providers import ProviderError
 
         try:
@@ -135,7 +255,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     report = asyncio.run(run_index(brain.config, brain.store, embedder))
     if report.reset:
         print("index identity changed: re-indexed from scratch")
-    mode = "with embeddings" if report.embeddings else "full-text only (no embed provider)"
+    mode = "with embeddings" if embedder else "full-text only (no embed provider)"
     print(
         f"indexed {report.indexed}, unchanged {report.unchanged}, "
         f"removed {report.removed}, skipped {report.skipped} — {mode}"
@@ -161,62 +281,57 @@ def cmd_chat(args: argparse.Namespace) -> None:
         elif event.type in ("notice", "error"):
             print(f"[{event.type}] {event.data['text']}", file=sys.stderr)
 
-    async def one(text: str) -> None:
-        await brain.chat_turn(thread, text, sink)
-        print()
+    async def session() -> None:
+        async with brain.runtime() as runtime:
+            for err in runtime.mcp_errors:
+                print(f"[mcp] {err}", file=sys.stderr)
 
-    if args.message:
-        asyncio.run(one(args.message))
-        brain.close()
-        return
+            async def one(text: str) -> None:
+                answer = await runtime.run(thread, text, sink)
+                brain.record_turn(thread, "owner", text, answer)
+                print()
 
-    print(f"{brain.config.name} — thread {thread}. Ctrl-D or /quit to leave.")
-    while True:
-        try:
-            text = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not text:
-            continue
-        if text in ("/quit", "/exit"):
-            break
-        asyncio.run(one(text))
+            if args.message:
+                await one(args.message)
+                return
+            print(f"{brain.config.name} — thread {thread}. Ctrl-D or /quit to leave.")
+            while True:
+                try:
+                    text = await asyncio.to_thread(input, "\n> ")
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    return
+                text = text.strip()
+                if not text:
+                    continue
+                if text in ("/quit", "/exit"):
+                    return
+                await one(text)
+
+    asyncio.run(session())
     brain.close()
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
     brain = _brain(args)
-    if brain.config.server_auth == "none" and args.host not in ("127.0.0.1", "localhost", "::1"):
-        sys.exit(
-            f"refusing to bind {args.host} with server.auth: none — set server.auth: key "
-            "in cortex.yaml and issue a key first (cortex keys issue <name>)"
-        )
+    if brain.store.count_users() == 0:
+        sys.exit("no dashboard accounts exist yet — run `cortex setup` first")
     warning = brain.warn_if_public("chat")
     if warning:
         print(f"warning: {warning}", file=sys.stderr)
-    try:
-        import uvicorn
+    import uvicorn
 
-        from cortex.server.app import build_app
-    except ImportError:
-        sys.exit("the server needs extras: pip install 'cortex-brain[server]'")
+    from cortex.server.app import build_app
+
     app = build_app(brain)
-    auth = brain.config.server_auth
-    print(f"{brain.config.name} at http://{args.host}:{args.port} (auth: {auth})")
+    print(f"{brain.config.name} dashboard at http://{args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 
 def cmd_mcp(args: argparse.Namespace) -> None:
     brain = _brain(args)
-    try:
-        from cortex.mcp.server import serve_stdio
-    except ImportError:
-        sys.exit("MCP export needs extras: pip install 'cortex-brain[mcp]'")
-    try:
-        import mcp  # noqa: F401
-    except ImportError:
-        sys.exit("MCP export needs extras: pip install 'cortex-brain[mcp]'")
+    from cortex.mcp.server import serve_stdio
+
     asyncio.run(serve_stdio(brain))
 
 
@@ -238,29 +353,38 @@ def cmd_connectors(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def cmd_keys(args: argparse.Namespace) -> None:
+def cmd_users(args: argparse.Namespace) -> None:
     brain = _brain(args)
-    if args.action == "issue":
+    if args.action == "add":
         if not args.name:
-            sys.exit("usage: cortex keys issue <name>")
-        key = keymod.generate_key()
-        brain.store.add_key(args.name, keymod.key_prefix(key), keymod.hash_key(key))
-        print(f"{args.name}: {key}")
-        print("shown once; only its hash is stored")
+            sys.exit("usage: cortex users add <name> [--role admin|member]")
+        try:
+            username = auth.validate_username(args.name.strip().lower())
+        except auth.AuthError as exc:
+            sys.exit(f"error: {exc}")
+        if brain.store.get_user(username):
+            sys.exit(f"user {username!r} exists")
+        password = getpass.getpass("Password (8+ chars): ")
+        if len(password) < 8:
+            sys.exit("error: password must be 8+ characters")
+        pw_hash, salt = auth.hash_password(password)
+        brain.store.add_user(username, pw_hash, salt, args.role)
+        (brain.config.vaults_dir / username).mkdir(parents=True, exist_ok=True)
+        print(f"added {username} ({args.role})")
     elif args.action == "list":
-        rows = brain.store.list_keys()
+        rows = brain.store.list_users()
         if not rows:
-            print("no keys issued")
+            print("no users — run `cortex setup`")
         for row in rows:
-            state = "enabled" if row["enabled"] else "revoked"
-            print(f"{row['name']}  {row['prefix']}…  {state}  {row['created_at']}")
-    elif args.action == "revoke":
+            print(f"{row['username']}  {row['role']}  {row['created_at']}")
+    elif args.action == "remove":
         if not args.name:
-            sys.exit("usage: cortex keys revoke <name>")
-        if brain.store.revoke_key(args.name):
-            print(f"revoked {args.name}")
+            sys.exit("usage: cortex users remove <name>")
+        if brain.store.delete_user(args.name):
+            print(f"removed {args.name} (their vault directory is kept)")
         else:
-            sys.exit(f"no key named {args.name!r}")
+            sys.exit(f"no user named {args.name!r}")
+    brain.close()
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -283,13 +407,13 @@ def cmd_status(args: argparse.Namespace) -> None:
         print(line + (f" — WARNING: {warning}" if warning else ""))
     tools = [p.name for p in brain.registry.plugins()]
     print(f"tools ({len(tools)}): {', '.join(tools)}")
-    if brain.registry.load_errors:
-        for err in brain.registry.load_errors:
-            print(f"plugin error: {err}")
+    for err in brain.registry.load_errors:
+        print(f"plugin error: {err}")
     if config.mcp_servers:
         names = ", ".join(s.name for s in config.mcp_servers if s.enabled)
-        print(f"mcp servers configured: {names or 'none enabled'} (attached at chat time)")
+        print(f"mcp servers configured: {names or 'none enabled'} (attached at agent start)")
     print(f"skills: {len(brain.skills)}")
+    print(f"users: {brain.store.count_users()}")
     brain.close()
 
 
@@ -300,29 +424,41 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--version", action="version", version=f"cortex {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("init", help="create a new brain directory")
+    p = sub.add_parser("setup", help="interactive wizard: brain, endpoint, admin account")
+    p.add_argument("path", nargs="?", default="")
+    p.add_argument("--non-interactive", action="store_true")
+    p.add_argument("--kind", choices=list(KIND_PRESETS), default="ollama")
+    p.add_argument("--name", default="")
+    p.add_argument("--base-url", default="")
+    p.add_argument("--chat-model", default="")
+    p.add_argument("--embed-model", default=None)
+    p.add_argument("--admin-user", default="")
+    p.add_argument("--admin-password", default="")
+    p.set_defaults(func=cmd_setup)
+
+    p = sub.add_parser("init", help="scaffold a brain directory without prompts")
     p.add_argument("path")
     p.add_argument("--name", default="")
-    p.add_argument("--provider-url", default="http://localhost:11434/v1")
-    p.add_argument("--chat-model", default="qwen3")
-    p.add_argument("--embed-model", default="nomic-embed-text")
+    p.add_argument("--provider-url", default="")
+    p.add_argument("--chat-model", default="")
+    p.add_argument("--embed-model", default=None)
     p.set_defaults(func=cmd_init)
 
     for name, func, help_text in (
-        ("index", cmd_index, "index notes and sources"),
+        ("index", cmd_index, "index vaults and sources"),
         ("status", cmd_status, "what is configured, indexed, and reachable"),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--brain")
         p.set_defaults(func=func)
 
-    p = sub.add_parser("chat", help="chat with the brain in the terminal")
+    p = sub.add_parser("chat", help="chat with the brain in the terminal (box owner scope)")
     p.add_argument("--brain")
     p.add_argument("--thread", default="")
     p.add_argument("-m", "--message", default="", help="one-shot message instead of a REPL")
     p.set_defaults(func=cmd_chat)
 
-    p = sub.add_parser("serve", help="run the web chat + HTTP API")
+    p = sub.add_parser("serve", help="run the dashboard")
     p.add_argument("--brain")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8642)
@@ -337,11 +473,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--brain")
     p.set_defaults(func=cmd_connectors)
 
-    p = sub.add_parser("keys", help="issue and revoke ctx_ server keys")
-    p.add_argument("action", choices=["issue", "list", "revoke"])
+    p = sub.add_parser("users", help="manage dashboard accounts")
+    p.add_argument("action", choices=["add", "list", "remove"])
     p.add_argument("name", nargs="?", default="")
+    p.add_argument("--role", choices=["admin", "member"], default="member")
     p.add_argument("--brain")
-    p.set_defaults(func=cmd_keys)
+    p.set_defaults(func=cmd_users)
 
     args = parser.parse_args(argv)
     args.func(args)

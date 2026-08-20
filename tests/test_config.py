@@ -24,8 +24,6 @@ mcp_servers:
     command: npx
     args: ["-y", "server-filesystem"]
     exclude: ["delete_file"]
-server:
-  auth: key
 """
 
 
@@ -42,7 +40,6 @@ def test_full_config_parses(tmp_path):
     (server,) = config.mcp_servers
     assert server.args == ("-y", "server-filesystem")
     assert server.exclude == ("delete_file",)
-    assert config.server_auth == "key"
 
 
 def test_embed_falls_back_to_chat_provider_only_if_it_embeds(tmp_path):

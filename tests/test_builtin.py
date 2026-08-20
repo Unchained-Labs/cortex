@@ -10,14 +10,14 @@ def test_builtin_tools_registered(brain: Brain):
 
 
 def test_read_file_traversal_and_missing_look_identical(brain: Brain):
-    (brain.config.notes_dir / "real.md").write_text("line one\nline two\n", encoding="utf-8")
+    (brain.config.shared_vault / "real.md").write_text("line one\nline two\n", encoding="utf-8")
     escape = brain.registry.invoke("read_file", {"path": "../../etc/passwd"}).text
-    missing = brain.registry.invoke("read_file", {"path": "notes/ghost.md"}).text
+    missing = brain.registry.invoke("read_file", {"path": "vaults/shared/ghost.md"}).text
     assert escape.startswith("No such file")
     # identical wording modulo the echoed path, so existence outside the
     # brain is not leaked by a different message shape
     assert escape.split(":")[0] == missing.split(":")[0]
-    real = brain.registry.invoke("read_file", {"path": "notes/real.md"}).text
+    real = brain.registry.invoke("read_file", {"path": "vaults/shared/real.md"}).text
     assert "line two" in real and "    1 |" in real
 
 
@@ -37,7 +37,7 @@ def test_search_brain_reports_empty_plainly(brain: Brain):
 
 
 def test_grep_exact_finds_literals(brain: Brain):
-    (brain.config.notes_dir / "log.md").write_text(
+    (brain.config.shared_vault / "log.md").write_text(
         "ERR_CONN_REFUSED happened at 3am\n", encoding="utf-8"
     )
     out = brain.registry.invoke("grep_exact", {"pattern": "ERR_CONN_REFUSED"}).text
@@ -48,6 +48,6 @@ def test_grep_exact_finds_literals(brain: Brain):
 
 
 def test_list_sources_counts(brain: Brain):
-    (brain.config.notes_dir / "a.md").write_text("x\n", encoding="utf-8")
+    (brain.config.shared_vault / "a.md").write_text("x\n", encoding="utf-8")
     out = brain.registry.invoke("list_sources", {}).text
-    assert "testbrain" in out and "notes/" in out
+    assert "testbrain" in out and "vaults/shared/" in out

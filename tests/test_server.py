@@ -1,71 +1,156 @@
 import pytest
+from fastapi.testclient import TestClient
 
-fastapi = pytest.importorskip("fastapi")
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-from cortex import keys as keymod  # noqa: E402
-from cortex.brain import Brain  # noqa: E402
-from cortex.server.app import build_app  # noqa: E402
+from conftest import add_user
+from cortex.brain import Brain
+from cortex.memory.chunking import Chunk
+from cortex.server.app import build_app
 
 
 @pytest.fixture
 def client(brain: Brain):
-    return TestClient(build_app(brain))
+    add_user(brain, "erwin", role="admin")
+    add_user(brain, "sam")
+    with TestClient(build_app(brain)) as c:
+        yield c
 
 
-def test_health_is_public(client):
-    res = client.get("/health")
-    assert res.status_code == 200
-    assert res.json()["ok"] is True
+def signin(client: TestClient, username: str, password: str = "hunter2hunter2"):
+    res = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert res.status_code == 200, res.text
+    return res.json()
 
 
-def test_index_page_and_assets(client):
-    page = client.get("/")
-    assert page.status_code == 200
-    assert "cortex" in page.text
-    css = client.get("/assets/tokens.css")
-    assert css.status_code == 200
-    assert "ul-accent" in css.text
-    assert client.get("/assets/../secrets.css").status_code in (404, 422)
-    assert client.get("/assets/nope.css").status_code == 404
+def test_health_public_everything_else_locked(client):
+    assert client.get("/health").status_code == 200
+    assert client.get("/api/info").status_code == 401
+    assert client.get("/api/vaults").status_code == 401
 
 
-def test_info_without_auth_mode_none(client):
-    res = client.get("/api/info")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["brain"] == "testbrain"
-    assert "search_brain" in body["tools"]
+def test_login_logout(client):
+    body = signin(client, "erwin")
+    assert body == {"username": "erwin", "role": "admin"}
+    assert client.get("/api/me").json()["username"] == "erwin"
+    client.post("/api/auth/logout")
+    assert client.get("/api/me").status_code == 401
+    bad = client.post("/api/auth/login", json={"username": "erwin", "password": "nope"})
+    assert bad.status_code == 401
 
 
-def test_key_mode_locks_api_but_not_health(brain_dir):
-    (brain_dir / "cortex.yaml").write_text(
-        "name: locked\nproviders: {}\nserver:\n  auth: key\n", encoding="utf-8"
+def test_vault_visibility_and_crud(client):
+    signin(client, "erwin")
+    names = {v["name"] for v in client.get("/api/vaults").json()["vaults"]}
+    assert names == {"shared", "erwin"}
+
+    create = client.post(
+        "/api/vault/file", json={"vault": "erwin", "path": "diary.md", "text": "private"}
     )
-    brain = Brain(brain_dir)
-    try:
-        client = TestClient(build_app(brain))
-        assert client.get("/health").status_code == 200
-        assert client.get("/api/info").status_code == 401
+    assert create.status_code == 200
+    mtime = create.json()["mtime"]
 
-        key = keymod.generate_key()
-        brain.store.add_key("test", keymod.key_prefix(key), keymod.hash_key(key))
-        ok = client.get("/api/info", headers={"Authorization": f"Bearer {key}"})
-        assert ok.status_code == 200
-        bad = client.get("/api/info", headers={"Authorization": "Bearer ctx_wrong"})
-        assert bad.status_code == 401
-    finally:
-        brain.close()
+    saved = client.put(
+        "/api/vault/file",
+        json={"vault": "erwin", "path": "diary.md", "text": "v2", "base_mtime": mtime},
+    )
+    assert saved.status_code == 200
+
+    stale = client.put(
+        "/api/vault/file",
+        json={"vault": "erwin", "path": "diary.md", "text": "v3", "base_mtime": mtime - 100},
+    )
+    assert stale.status_code == 409
+
+    # sam cannot see or touch erwin's vault
+    client.post("/api/auth/logout")
+    signin(client, "sam")
+    assert client.get("/api/vault/tree", params={"vault": "erwin"}).status_code == 404
+    assert (
+        client.get("/api/vault/file", params={"vault": "erwin", "path": "diary.md"}).status_code
+        == 404
+    )
+    shared = client.post(
+        "/api/vault/file", json={"vault": "shared", "path": "plan.md", "text": "ours"}
+    )
+    assert shared.status_code == 200
 
 
-def test_search_endpoint_reports_fts_only(client, brain):
-    from cortex.memory.chunking import Chunk
-
+def test_search_is_scoped_per_user(client, brain):
     brain.store.replace_file(
-        "notes/n.md", "1:1", 0.0, [Chunk(text="rosemary thrives", heading="", start_line=1)], None
+        "vaults/erwin/secret.md", "1:1", 0.0,
+        [Chunk(text="the anchovy stash location", heading="", start_line=1)], None,
     )
-    res = client.get("/api/search", params={"q": "rosemary"})
-    body = res.json()
-    assert body["used_vectors"] is False
-    assert body["hits"][0]["path"] == "notes/n.md"
+    brain.store.replace_file(
+        "vaults/shared/menu.md", "1:1", 0.0,
+        [Chunk(text="anchovy pizza friday", heading="", start_line=1)], None,
+    )
+    signin(client, "sam")
+    hits = client.get("/api/search", params={"q": "anchovy"}).json()["hits"]
+    assert [h["path"] for h in hits] == ["vaults/shared/menu.md"]
+    client.post("/api/auth/logout")
+    signin(client, "erwin")
+    hits = client.get("/api/search", params={"q": "anchovy"}).json()["hits"]
+    assert {h["path"] for h in hits} == {"vaults/erwin/secret.md", "vaults/shared/menu.md"}
+
+
+def test_channels_flow(client):
+    signin(client, "erwin")
+    channels = client.get("/api/channels").json()["channels"]
+    assert channels[0]["name"] == "general"
+    cid = channels[0]["id"]
+
+    posted = client.post(f"/api/channels/{cid}/messages", json={"body": "hello team"})
+    assert posted.status_code == 200
+    history = client.get(f"/api/channels/{cid}/messages").json()["messages"]
+    assert history[-1]["body"] == "hello team"
+    assert history[-1]["author"] == "erwin"
+
+    made = client.post("/api/channels", json={"name": "#Garden"})
+    assert made.status_code == 200 and made.json()["name"] == "garden"
+    bad = client.post("/api/channels", json={"name": "no spaces!"})
+    assert bad.status_code == 422
+
+
+def test_thread_privacy(client, brain):
+    brain.store.touch_thread("t-erwin", "erwin", "private thoughts")
+    signin(client, "sam")
+    assert client.get("/api/history", params={"thread": "t-erwin"}).status_code == 404
+    assert client.get("/api/threads").json()["threads"] == []
+
+
+def test_admin_gate_and_user_management(client):
+    signin(client, "sam")
+    assert client.get("/api/admin/users").status_code == 403
+    client.post("/api/auth/logout")
+
+    signin(client, "erwin")
+    created = client.post(
+        "/api/admin/users",
+        json={"username": "priya", "password": "longenough", "role": "member"},
+    )
+    assert created.status_code == 201
+    assert client.post(
+        "/api/admin/users",
+        json={"username": "shared", "password": "longenough", "role": "member"},
+    ).status_code == 422  # reserved name
+    assert client.delete("/api/admin/users/erwin").status_code == 422  # not yourself
+    assert client.delete("/api/admin/users/priya").json()["ok"] is True
+
+
+def test_import_zip(client):
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("vault/note.md", "# imported")
+        zf.writestr("vault/.obsidian/app.json", "{}")
+    signin(client, "erwin")
+    res = client.post(
+        "/api/vault/import",
+        data={"vault": "erwin"},
+        files={"file": ("v.zip", buf.getvalue(), "application/zip")},
+    )
+    assert res.status_code == 200
+    assert res.json()["imported"] == 1
+    got = client.get("/api/vault/file", params={"vault": "erwin", "path": "note.md"})
+    assert got.json()["text"] == "# imported"

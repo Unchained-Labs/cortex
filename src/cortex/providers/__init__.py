@@ -1,27 +1,12 @@
 """Model providers.
 
-The internal message shape is the OpenAI chat-completions form; adapters
-translate at the wire. ``get_provider`` returns a client for a profile.
+Chat models come from LangChain: one OpenAI-compatible wire covers Ollama,
+vLLM, LM Studio, OpenRouter, and a LiteLLM proxy; Anthropic speaks its own.
+Embeddings stay a thin httpx client because every self-hosted embedding
+server speaks the OpenAI shape and nothing more is needed.
 """
 
-from __future__ import annotations
+from cortex.providers.embeddings import Embedder, ProviderError
+from cortex.providers.llm import chat_model
 
-from cortex.config import ProviderProfile
-from cortex.providers.base import ChatResult, Provider, ProviderError, ToolCall
-
-
-def get_provider(profile: ProviderProfile) -> Provider:
-    if profile.kind == "openai":
-        from cortex.providers.openai_compat import OpenAICompatProvider
-
-        return OpenAICompatProvider(profile)
-    if profile.kind == "anthropic":
-        from cortex.providers.anthropic import AnthropicProvider
-
-        return AnthropicProvider(profile)
-    raise ProviderError(
-        f"unknown provider kind {profile.kind!r} (expected 'openai' or 'anthropic')"
-    )
-
-
-__all__ = ["ChatResult", "Provider", "ProviderError", "ToolCall", "get_provider"]
+__all__ = ["Embedder", "ProviderError", "chat_model"]

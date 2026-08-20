@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cortex-brain"
-version = "0.1.0"
+version = "0.2.0"
 description = "A self-hosted brain for your home, your company, or any activity: pluggable local or cloud LLMs, hybrid memory, and an expandable plugin surface."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -14,6 +14,17 @@ keywords = ["agent", "assistant", "mcp", "rag", "self-hosted"]
 dependencies = [
     "httpx>=0.27",
     "pyyaml>=6.0",
+    "langchain-core>=0.3,<0.4",
+    "langchain-openai>=0.2",
+    "langchain-anthropic>=0.3",
+    "langgraph>=0.2.60",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "langchain-mcp-adapters>=0.1",
+    "mcp>=1.9",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+    "websockets>=13",
 ]
 
 [project.urls]
@@ -21,14 +32,10 @@ Homepage = "https://unchained-labs.github.io/cortex/"
 Repository = "https://github.com/Unchained-Labs/cortex"
 
 [project.optional-dependencies]
-server = ["fastapi>=0.115", "uvicorn>=0.30"]
-mcp = ["mcp>=1.9"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
 ]
 
 [project.scripts]
@@ -47,3 +54,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Depends() in argument defaults is FastAPI's dependency-injection idiom.
+"src/cortex/server/app.py" = ["B008"]

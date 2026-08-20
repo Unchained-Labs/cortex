@@ -9,3 +9,5 @@ build/
 .cortex/
 *.db
 .env
+node_modules/
+*.tsbuildinfo

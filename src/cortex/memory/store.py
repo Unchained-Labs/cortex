@@ -1,4 +1,5 @@
-"""SQLite persistence: chunks + FTS5, vectors, facts, conversations, keys.
+"""SQLite persistence: chunks + FTS5, vectors, facts, conversations, users,
+channels.
 
 One file per brain. FTS5 always works; vectors exist only when an embed
 provider is configured, and their absence degrades search to full-text — it
@@ -59,10 +60,23 @@ CREATE TABLE IF NOT EXISTS messages(
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread, id);
-CREATE TABLE IF NOT EXISTS keys(
-    name TEXT PRIMARY KEY, prefix TEXT NOT NULL, hash TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS threads(
+    thread TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS users(
+    username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL, salt TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS channels(
+    id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+    created_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS channel_messages(
+    id INTEGER PRIMARY KEY, channel_id INTEGER NOT NULL REFERENCES channels(id),
+    author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS channel_messages_chan ON channel_messages(channel_id, id);
 """
 
 
@@ -175,20 +189,39 @@ class Store:
         return {"files": files, "chunks": chunks, "vectors": vectors, "facts": facts}
 
     # -- search primitives ------------------------------------------------
-    def fts_search(self, query: str, k: int = 40) -> list[sqlite3.Row]:
+    # `prefixes` is the caller's scope: None = unrestricted, () = nothing.
+    # The filter runs inside the query, never as a post-hoc trim.
+    @staticmethod
+    def _prefix_clause(prefixes: tuple[str, ...] | None) -> tuple[str, list[str]]:
+        if prefixes is None:
+            return "", []
+        if not prefixes:
+            return " AND 0", []
+        clause = " AND (" + " OR ".join("c.path GLOB ?" for _ in prefixes) + ")"
+        return clause, [f"{p}*" for p in prefixes]
+
+    def fts_search(
+        self, query: str, k: int = 40, prefixes: tuple[str, ...] | None = None
+    ) -> list[sqlite3.Row]:
         q = fts_query(query)
         if not q:
             return []
+        clause, params = self._prefix_clause(prefixes)
         return self.db.execute(
             "SELECT c.id, c.path, c.heading, c.body, c.start_line, c.mtime, "
             "bm25(chunks_fts) AS rank "
             "FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid "
-            "WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",
-            (q, k),
+            f"WHERE chunks_fts MATCH ?{clause} ORDER BY rank LIMIT ?",
+            (q, *params, k),
         ).fetchall()
 
-    def all_vectors(self) -> list[sqlite3.Row]:
-        return self.db.execute("SELECT chunk_id, dim, v FROM vectors").fetchall()
+    def all_vectors(self, prefixes: tuple[str, ...] | None = None) -> list[sqlite3.Row]:
+        clause, params = self._prefix_clause(prefixes)
+        return self.db.execute(
+            "SELECT v.chunk_id, v.dim, v.v FROM vectors v "
+            f"JOIN chunks c ON c.id = v.chunk_id WHERE 1{clause}",
+            params,
+        ).fetchall()
 
     def chunks_by_ids(self, ids: list[int]) -> dict[int, sqlite3.Row]:
         if not ids:
@@ -244,26 +277,110 @@ class Store:
         ).fetchall()
         return list(reversed(rows))
 
-    # -- keys -------------------------------------------------------------
-    def add_key(self, name: str, prefix: str, key_hash: str) -> None:
+    # -- users ------------------------------------------------------------
+    def add_user(self, username: str, pw_hash: str, salt: str, role: str) -> None:
         with self.db:
             self.db.execute(
-                "INSERT INTO keys(name, prefix, hash, created_at) VALUES(?,?,?,?)",
-                (name, prefix, key_hash, _now()),
+                "INSERT INTO users(username, pw_hash, salt, role, created_at) "
+                "VALUES(?,?,?,?,?)",
+                (username, pw_hash, salt, role, _now()),
             )
 
-    def list_keys(self) -> list[sqlite3.Row]:
+    def get_user(self, username: str) -> sqlite3.Row | None:
         return self.db.execute(
-            "SELECT name, prefix, enabled, created_at FROM keys ORDER BY name"
+            "SELECT username, pw_hash, salt, role, created_at FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+
+    def list_users(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT username, role, created_at FROM users ORDER BY username"
         ).fetchall()
 
-    def revoke_key(self, name: str) -> bool:
+    def delete_user(self, username: str) -> bool:
         with self.db:
-            cur = self.db.execute("UPDATE keys SET enabled=0 WHERE name=?", (name,))
+            cur = self.db.execute("DELETE FROM users WHERE username=?", (username,))
         return cur.rowcount > 0
 
-    def key_valid(self, key_hash: str) -> bool:
+    def count_users(self) -> int:
+        return self.db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+
+    # -- threads (agent conversations) ------------------------------------
+    def touch_thread(self, thread: str, owner: str, title_candidate: str = "") -> None:
+        with self.db:
+            row = self.db.execute(
+                "SELECT title FROM threads WHERE thread=?", (thread,)
+            ).fetchone()
+            if row is None:
+                title = title_candidate.strip()[:80]
+                self.db.execute(
+                    "INSERT INTO threads(thread, owner, title, updated_at) VALUES(?,?,?,?)",
+                    (thread, owner, title, _now()),
+                )
+            else:
+                self.db.execute(
+                    "UPDATE threads SET updated_at=? WHERE thread=?", (_now(), thread)
+                )
+
+    def list_threads(self, owner: str) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT thread, title, updated_at FROM threads WHERE owner=? "
+            "ORDER BY updated_at DESC LIMIT 100",
+            (owner,),
+        ).fetchall()
+
+    def thread_owner(self, thread: str) -> str | None:
         row = self.db.execute(
-            "SELECT 1 FROM keys WHERE hash=? AND enabled=1", (key_hash,)
+            "SELECT owner FROM threads WHERE thread=?", (thread,)
         ).fetchone()
-        return row is not None
+        return row["owner"] if row else None
+
+    # -- channels ----------------------------------------------------------
+    def ensure_channel(self, name: str, created_by: str) -> int:
+        with self.db:
+            row = self.db.execute("SELECT id FROM channels WHERE name=?", (name,)).fetchone()
+            if row:
+                return row["id"]
+            cur = self.db.execute(
+                "INSERT INTO channels(name, created_by, created_at) VALUES(?,?,?)",
+                (name, created_by, _now()),
+            )
+            return cur.lastrowid or 0
+
+    def list_channels(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT id, name, created_by FROM channels ORDER BY id"
+        ).fetchall()
+
+    def channel_exists(self, channel_id: int) -> bool:
+        return (
+            self.db.execute("SELECT 1 FROM channels WHERE id=?", (channel_id,)).fetchone()
+            is not None
+        )
+
+    def add_channel_message(self, channel_id: int, author: str, body: str) -> tuple[int, str]:
+        at = _now()
+        with self.db:
+            cur = self.db.execute(
+                "INSERT INTO channel_messages(channel_id, author, body, created_at) "
+                "VALUES(?,?,?,?)",
+                (channel_id, author, body, at),
+            )
+        return cur.lastrowid or 0, at
+
+    def channel_messages(
+        self, channel_id: int, before: int | None = None, limit: int = 50
+    ) -> list[sqlite3.Row]:
+        if before is not None:
+            rows = self.db.execute(
+                "SELECT id, author, body, created_at FROM channel_messages "
+                "WHERE channel_id=? AND id<? ORDER BY id DESC LIMIT ?",
+                (channel_id, before, limit),
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT id, author, body, created_at FROM channel_messages "
+                "WHERE channel_id=? ORDER BY id DESC LIMIT ?",
+                (channel_id, limit),
+            ).fetchall()
+        return list(reversed(rows))

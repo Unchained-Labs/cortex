@@ -48,9 +48,14 @@ def _cosine(a: tuple[float, ...], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-def vector_rank(store: Store, query_vector: list[float], k: int = 40) -> list[int]:
+def vector_rank(
+    store: Store,
+    query_vector: list[float],
+    k: int = 40,
+    prefixes: tuple[str, ...] | None = None,
+) -> list[int]:
     scored: list[tuple[float, int]] = []
-    for row in store.all_vectors():
+    for row in store.all_vectors(prefixes):
         if row["dim"] != len(query_vector):
             continue
         vec = unpack_vector(row["v"], row["dim"])
@@ -65,10 +70,11 @@ def hybrid_search(
     query_vector: list[float] | None,
     k_files: int = 8,
     now: float | None = None,
+    prefixes: tuple[str, ...] | None = None,
 ) -> SearchResult:
-    fts_rows = store.fts_search(query)
+    fts_rows = store.fts_search(query, prefixes=prefixes)
     fts_ids = [r["id"] for r in fts_rows]
-    vec_ids = vector_rank(store, query_vector) if query_vector else []
+    vec_ids = vector_rank(store, query_vector, prefixes=prefixes) if query_vector else []
 
     # Reciprocal rank fusion: vector sets the base score, lexical adds to it.
     scores: dict[int, float] = {}

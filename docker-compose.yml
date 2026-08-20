@@ -1,0 +1,27 @@
+name: cortex
+
+services:
+  cortex:
+    build: .
+    ports:
+      - "${CORTEX_PORT:-8642}:8642"
+    volumes:
+      - brain:/brain
+    environment:
+      CORTEX_BRAIN: /brain
+      # Reach a model on the docker host with host.docker.internal
+      # (works on Linux via the extra_hosts line below).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  brain:
+
+# First run: create the brain inside the volume, then start.
+#   docker compose run --rm cortex cortex setup /brain \
+#     --non-interactive --kind custom \
+#     --base-url http://host.docker.internal:11434/v1 \
+#     --chat-model qwen3 --embed-model nomic-embed-text \
+#     --admin-user you --admin-password 'change-me-now'
+#   docker compose up -d

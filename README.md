@@ -4,130 +4,139 @@
 
 # cortex
 
-Turns a folder of notes and sources into a private brain you can chat with —
-on your own model, on your own machine.
+A self-hosted brain for a household or a team: a dashboard where people chat
+with each other and with an agent that has read their shared notes — on your
+own model, on your own machine.
 
-**Status: alpha.** The CLI surface (`init`, `index`, `chat`, `serve`, `mcp`,
-`connectors`, `keys`, `status`) is settling; config keys and the plugin
-contract may still change between minor versions.
+**Status: alpha.** The API and config surface are settling; expect breaking
+changes between minor versions. The index and checkpoint formats are
+disposable caches — deleting `.cortex/` loses conversations, never notes.
 
 ```sh
-pip install 'cortex-brain[server,mcp]'
-cortex init ~/brains/home        # scaffolds the brain and its cortex.yaml
-cortex index --brain ~/brains/home
-cortex chat  --brain ~/brains/home
+pip install cortex-brain
+cortex setup                 # wizard: brain dir, model endpoint, admin account
+cortex serve --host 0.0.0.0  # dashboard on :8642
 ```
 
-**What it does not do:** cortex hosts no model. It speaks to an
-OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, OpenAI) or
-the Anthropic API — you bring one. It does not sync git repositories or crawl
-forges, it ships one calendar connector (single events only, no recurrence
-expansion), and its vector search is exact cosine in-process: built for
-personal- and team-sized brains, not millions of chunks. Multi-user auth is a
-shared `ctx_` key, not accounts.
+Or `bash install.sh` (pipx/uv/venv autodetect), or `docker compose up` after
+the one-time `cortex setup /brain` documented in docker-compose.yml.
 
-## What a brain is
+**What it does not do:** cortex hosts no model — you bring an endpoint:
+Ollama, vLLM, LM Studio, a LiteLLM proxy, OpenRouter, or the Anthropic API.
+Vector search is exact cosine in-process, right for personal- and team-sized
+brains, wrong for millions of chunks. Vault edits are last-writer-wins with
+conflict *detection* (a 409 and a banner), not git-grade merging. The
+calendar connector expands no recurrence rules yet.
 
-A directory. `cortex init` creates:
+## The dashboard
 
-```
-~/brains/home/
-├── cortex.yaml     # providers, roles, mcp servers, connectors
-├── notes/          # yours — an Obsidian vault clone works as-is
-├── sources/        # connector output, one folder per connector
-├── skills/         # agentskills.io SKILL.md procedure folders
-├── plugins/        # drop-in tool plugins (*.py)
-├── connectors/     # drop-in ingestion connectors (*.py)
-└── .cortex/        # index + conversation state (disposable cache)
-```
+- **Chat** — private threads with the agent. It searches before it answers,
+  streams its tool calls (⚙ `search_brain` … ✓ 33ms), and cites files by
+  path; clicking a citation opens it in the vault view.
+- **Channels** — peer chat for the people on the brain. Mention `@cortex` and
+  the agent answers in-channel, reading only the shared vault — never
+  anyone's personal vault.
+- **Vault** — shared and personal vaults, edited in the browser with
+  Obsidian-flavored rendering: `[[wikilinks]]`, `![[embeds]]`, `> [!note]`
+  callouts, frontmatter, task checkboxes that write through, `#tags`.
+  Ctrl-S saves; a concurrent edit gets a conflict banner, not a silent
+  clobber.
+- **Import** — bring an existing Obsidian vault as a zip upload, a git URL,
+  or a server path. `.obsidian/`, `.git/` and non-vault file types are
+  skipped.
+- **Admin** — accounts (`admin` / `member`), index stats.
 
-Back it up by copying the folder. Run a second brain (home / company / club)
-by running `cortex init` again somewhere else.
+Accounts are username + password (scrypt), sessions are HttpOnly cookies.
+Each user sees the shared vault, their own vault, and connector sources —
+search, grep, and the agent are scoped per request, filtered inside the
+query rather than trimmed after it.
 
-## Pluggable models
+## The agent stack
 
-`cortex.yaml` declares provider profiles and assigns them roles:
+LangGraph's ReAct agent over LangChain chat models, with conversation state
+in an `AsyncSqliteSaver` checkpoint per thread:
 
 ```yaml
 providers:
   local:
-    kind: openai                    # the wire protocol, not the vendor
+    kind: openai                    # Ollama, vLLM, LM Studio — one wire
     base_url: "http://localhost:11434/v1"
     chat_model: qwen3
     embed_model: nomic-embed-text
+  router:
+    kind: openrouter                # cloud aggregator, OpenAI wire
+    api_key_env: OPENROUTER_API_KEY
+    chat_model: anthropic/claude-sonnet-5
   claude:
-    kind: anthropic
+    kind: anthropic                 # direct Anthropic Messages API
     api_key_env: ANTHROPIC_API_KEY
     chat_model: claude-sonnet-5
 roles:
-  chat: claude
+  chat: router
   embed: local
 ```
 
-Chat and embedding can come from different endpoints. Endpoints are
-classified by network facts: private, loopback, link-local, CGNAT, and
+A LiteLLM proxy is `kind: litellm` with its `base_url` — its routing and
+fallback policy stays in the proxy, so cortex carries no LiteLLM SDK.
+Endpoints are classified by network facts: private, loopback, CGNAT and
 Tailscale addresses are trusted; anything public gets a plain warning that
-your notes will leave the network. Without an embed provider, search degrades
-to full-text and says so — it never fakes a vector score.
+your notes will leave the network.
 
-## Retrieval
-
-Hybrid search over everything indexed: SQLite FTS5 and vector cosine ranked
-separately, fused with reciprocal rank fusion, nudged by recency. No single
-scorer is trusted on its own — the design that worked in
+Retrieval is hybrid: SQLite FTS5 and vector cosine ranked separately, fused
+with reciprocal rank fusion, nudged by recency — the design from
 [Cerebras' knowledge base](https://www.cerebras.ai/blog/how-we-built-our-knowledge-base).
-Chunking keeps markdown heading paths and
-code definition boundaries, and the index re-builds itself from scratch when
-the chunk schema *or* the embedding model changes, because silently mixing
-vector spaces is corruption, not compatibility.
+The index rebuilds from scratch when the chunk schema *or* embedding model
+changes, because silently mixing vector spaces is corruption. No embedding
+endpoint means full-text search that says so, not fake vector scores.
 
 ## Four ways to extend it
 
 | Extension | Contract | Runs |
 | :--- | :--- | :--- |
-| Tool plugin | `plugins/*.py` exposing `register(registry)`, or a package with a `cortex.tools` entry point | at agent time |
-| MCP server | `mcp_servers:` block in cortex.yaml (stdio or streamable HTTP) | at agent time |
-| Skill | `skills/<name>/SKILL.md` (agentskills.io format) | loaded lazily via `use_skill` |
-| Connector | `connectors/*.py` exposing `sync(out_dir, settings)` | at `cortex connectors run` |
+| Tool plugin | `plugins/*.py` exposing `register(registry)`, or a package with a `cortex.tools` entry point | agent time |
+| MCP server | `mcp_servers:` block (stdio or streamable HTTP), attached via langchain-mcp-adapters | agent time |
+| Skill | `skills/<name>/SKILL.md` (agentskills.io), loaded lazily via `use_skill` | on demand |
+| Connector | `connectors/*.py` exposing `sync(out_dir, settings)` — distill, don't dump | `cortex connectors run` |
 
-A broken extension is reported and isolated; it never takes the brain down.
-Registration is not authorization — a tool that touches something sensitive
-keeps its own checks inside the callable.
+A broken extension is reported and isolated, never fatal. Registration is
+not authorization: a tool that touches something sensitive keeps its own
+checks inside the callable. Cortex is also an MCP *server* —
+`claude mcp add home-brain -- cortex mcp --brain ~/brain` gives Claude Code,
+Cursor, or Hermes the same tool registry, at box-owner scope.
 
-Cortex is also an MCP *server*: `cortex mcp --brain ~/brains/home` exports
-the same tool registry over stdio, so Claude Code, Cursor, or Hermes can
-search your brain:
+## Layout of a brain
 
-```sh
-claude mcp add home-brain -- cortex mcp --brain ~/brains/home
+```
+~/brain/
+├── cortex.yaml        # providers, roles, mcp servers, connectors
+├── vaults/shared/     # everyone's notes
+├── vaults/<user>/     # each user's private vault
+├── sources/           # connector output
+├── skills/ plugins/ connectors/
+└── .cortex/           # index, checkpoints, usage.jsonl — disposable cache
 ```
 
-## Web chat
-
-```sh
-cortex serve --brain ~/brains/home        # http://127.0.0.1:8642
-```
-
-With `server.auth: none` (the default) the server refuses to bind anything
-but loopback. To expose it on a LAN, set `server.auth: key`, issue a key with
-`cortex keys issue laptop`, and pass it as a Bearer token; only the SHA-256
-of the key is stored.
+Back it up by copying the folder. Home brain, company brain, club brain:
+three folders, three `cortex serve` processes.
 
 ## Observability
 
-Every model call and tool call appends a JSONL row to `.cortex/usage.jsonl`
-with `prompt_tokens` / `completion_tokens` when the endpoint reports them —
-absent counts stay absent rather than becoming zeros, which is exactly what
+Every model and tool call appends JSONL to `.cortex/usage.jsonl` with
+`prompt_tokens`/`completion_tokens` when the endpoint reports them — absent
+counts stay absent rather than becoming zeros, which is what
 [preflight](https://github.com/Unchained-Labs/preflight) expects for
-calibration. Telemetry never makes an agent or tool call fail.
+calibration. Telemetry never makes a call fail.
 
 ## Development
 
 ```sh
-uv venv --python 3.12 && uv pip install -e '.[dev,mcp]'
-.venv/bin/pytest
+uv venv --python 3.12 && uv pip install -e '.[dev]'
+.venv/bin/pytest                    # 83 tests
 .venv/bin/ruff check src tests
+cd web && npm install && npm run dev   # SPA dev server, proxies to :8642
 ```
+
+The frontend contract lives in [docs/product-spec.md](docs/product-spec.md).
 
 Docs: [unchained-labs.github.io/cortex](https://unchained-labs.github.io/cortex/) ·
 Brand: [Unchained-Labs/branding](https://github.com/Unchained-Labs/branding) ·

@@ -69,12 +69,15 @@ class BrainConfig:
     mcp_servers: list[McpServerConfig] = field(default_factory=list)
     connectors: dict[str, dict] = field(default_factory=dict)
     extra_paths: list[Path] = field(default_factory=list)
-    server_auth: str = "none"  # "none" (loopback only) or "key"
 
     # -- layout -----------------------------------------------------------
     @property
-    def notes_dir(self) -> Path:
-        return self.root / "notes"
+    def vaults_dir(self) -> Path:
+        return self.root / "vaults"
+
+    @property
+    def shared_vault(self) -> Path:
+        return self.vaults_dir / "shared"
 
     @property
     def sources_dir(self) -> Path:
@@ -104,10 +107,36 @@ class BrainConfig:
     def usage_path(self) -> Path:
         return self.state_dir / "usage.jsonl"
 
+    def vault_roots(self) -> list[Path]:
+        if not self.vaults_dir.is_dir():
+            return []
+        return sorted(p for p in self.vaults_dir.iterdir() if p.is_dir())
+
     def indexed_roots(self) -> list[Path]:
-        roots = [self.notes_dir, self.sources_dir]
+        roots = self.vault_roots() + [self.sources_dir]
         roots += [p for p in self.extra_paths]
         return [r for r in roots if r.is_dir()]
+
+    def root_pairs(self) -> list[tuple[str, Path]]:
+        """(index-key prefix, filesystem root) for everything indexed:
+        "vaults/shared", "vaults/<user>", "sources", plus extra-path names."""
+        pairs = [(f"vaults/{root.name}", root) for root in self.vault_roots()]
+        if self.sources_dir.is_dir():
+            pairs.append(("sources", self.sources_dir))
+        pairs += [(p.name, p) for p in self.extra_paths if p.is_dir()]
+        return pairs
+
+    def resolve_key(self, key: str) -> Path | None:
+        """Map an index key like "vaults/shared/garden.md" to its file,
+        refusing traversal outside the mapped root. None for anything else."""
+        for prefix, root in self.root_pairs():
+            if key.startswith(prefix + "/"):
+                rest = key[len(prefix) + 1 :]
+                target = (root / rest).resolve()
+                if str(target).startswith(str(root.resolve()) + "/"):
+                    return target
+                return None
+        return None
 
     # -- providers --------------------------------------------------------
     def provider_for(self, role: str) -> ProviderProfile | None:
@@ -175,7 +204,6 @@ def load_config(root: Path) -> BrainConfig:
         mcp_servers=mcp_servers,
         connectors=dict(raw.get("connectors") or {}),
         extra_paths=extra,
-        server_auth=str((raw.get("server") or {}).get("auth", "none")),
     )
 
 

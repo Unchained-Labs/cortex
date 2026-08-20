@@ -16,7 +16,7 @@ from pathlib import Path
 from cortex.config import BrainConfig
 from cortex.memory.chunking import CHUNK_SCHEMA, chunk_file
 from cortex.memory.store import Store
-from cortex.providers.base import Provider
+from cortex.providers.embeddings import Embedder
 
 TEXT_SUFFIXES = {
     ".md", ".mdx", ".markdown", ".txt", ".rst", ".org",
@@ -48,10 +48,10 @@ def _is_text(path: Path) -> bool:
     return path.suffix.lower() in TEXT_SUFFIXES or path.name.lower() in TEXT_NAMES
 
 
-def scan_files(roots: list[Path]) -> dict[str, Path]:
-    """Map of index key ("<root-name>/relative/path") to absolute path."""
+def scan_files(pairs: list[tuple[str, Path]]) -> dict[str, Path]:
+    """Map of index key ("<prefix>/relative/path") to absolute path."""
     found: dict[str, Path] = {}
-    for root in roots:
+    for prefix, root in pairs:
         for path in sorted(root.rglob("*")):
             if not path.is_file() or not _is_text(path):
                 continue
@@ -64,7 +64,7 @@ def scan_files(roots: list[Path]) -> dict[str, Path]:
                 continue
             if size == 0 or size > MAX_BYTES:
                 continue
-            found[f"{root.name}/{path.relative_to(root)}"] = path
+            found[f"{prefix}/{path.relative_to(root)}"] = path
     return found
 
 
@@ -73,7 +73,7 @@ def _index_identity(embed_model: str) -> str:
 
 
 async def run_index(
-    config: BrainConfig, store: Store, embedder: Provider | None
+    config: BrainConfig, store: Store, embedder: Embedder | None
 ) -> IndexReport:
     report = IndexReport(embeddings=embedder is not None)
     embed_model = embedder.profile.embed_model if embedder else ""
@@ -83,7 +83,7 @@ async def run_index(
         store.meta_set("index_identity", identity)
         report.reset = True
 
-    files = scan_files(config.indexed_roots())
+    files = scan_files(config.root_pairs())
 
     for gone in store.known_files() - set(files):
         store.delete_file(gone)
@@ -110,7 +110,7 @@ async def run_index(
     return report
 
 
-async def _embed_ordered(embedder: Provider, texts: list[str]) -> list[list[float]]:
+async def _embed_ordered(embedder: Embedder, texts: list[str]) -> list[list[float]]:
     """Batched embedding, reassembled by offset so a fast batch can never
     shift a slow one's vectors."""
     out: list[list[float] | None] = [None] * len(texts)

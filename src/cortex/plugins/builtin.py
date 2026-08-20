@@ -1,4 +1,15 @@
-"""Built-in tools: the hot path every brain gets without any plugin."""
+"""Built-in tools: the hot path every brain gets without any plugin.
+
+Every tool reads the caller's scope from ``cortex.scope`` — the dashboard
+sets it per request, the CLI and MCP export leave it unrestricted. Paths in
+and out of these tools are index keys ("vaults/shared/garden.md"), the same form
+search results cite, so the model can chain search → read without
+translation.
+
+Remembered facts are brain-wide by design: a household or team brain wants
+"the wifi password lives in the safe" visible to everyone. Do not remember
+secrets you would not put in the shared vault.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +19,7 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from cortex import scope
 from cortex.memory.indexer import scan_files
 from cortex.memory.search import format_result, hybrid_search
 from cortex.plugins import ToolPlugin, ToolRegistry
@@ -21,25 +33,35 @@ _MISSING_FILE = "No such file: {path}"
 def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
     def search_brain(query: str, k: int = 8) -> str:
         vector = brain.embed_query_sync(query)
-        result = hybrid_search(brain.store, query, vector, k_files=k, now=time.time())
+        result = hybrid_search(
+            brain.store,
+            query,
+            vector,
+            k_files=k,
+            now=time.time(),
+            prefixes=scope.current_prefixes.get(),
+        )
         return format_result(result, query)
 
     def grep_exact(pattern: str) -> str:
-        roots = brain.config.indexed_roots()
-        if not roots:
+        prefixes = scope.current_prefixes.get()
+        pairs = brain.config.root_pairs()
+        if not pairs:
             return "The brain has no indexed directories yet."
-        if shutil.which("rg"):
-            return _ripgrep(pattern, [str(r) for r in roots])
-        return _python_grep(pattern, roots)
+        if prefixes is None and shutil.which("rg"):
+            # rg prints filesystem paths, which only match index keys when
+            # nothing is scoped away — so it serves the unrestricted caller
+            # and the scoped one gets the (slower) key-aware scan.
+            return _ripgrep(pattern, [str(r) for _, r in pairs])
+        return _python_grep(pattern, pairs)
 
     def read_file(path: str, start_line: int = 1, num_lines: int = 200) -> str:
-        root = brain.config.root.resolve()
-        target = (root / path).resolve()
-        # Out-of-root and missing paths return the identical message so the
-        # tool leaks no existence information outside the brain.
-        if not str(target).startswith(str(root) + "/"):
+        # Out-of-scope, traversal, and missing paths all return the identical
+        # message: existence is not leaked by wording.
+        if not scope.allows_path(path):
             return _MISSING_FILE.format(path=path)
-        if not target.is_file():
+        target = brain.config.resolve_key(path)
+        if target is None or not target.is_file():
             return _MISSING_FILE.format(path=path)
         lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
         start = max(1, start_line)
@@ -53,10 +75,12 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
 
     def list_sources() -> str:
         config = brain.config
-        lines = [f"Brain: {config.name} at {config.root}"]
-        for root in config.indexed_roots():
-            count = len(scan_files([root]))
-            lines.append(f"- {root.name}/ — {count} indexable files")
+        lines = [f"Brain: {config.name}"]
+        for prefix, root in config.root_pairs():
+            if not scope.allows_path(f"{prefix}/"):
+                continue
+            count = len(scan_files([(prefix, root)]))
+            lines.append(f"- {prefix}/ — {count} indexable files")
         stats = brain.store.stats()
         lines.append(
             f"Index: {stats['files']} files, {stats['chunks']} chunks, "
@@ -64,12 +88,13 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         )
         return "\n".join(lines)
 
-    def remember(fact: str, source: str = "conversation") -> str:
+    def remember(fact: str, source: str = "") -> str:
         fact = fact.strip()
         if not fact:
             return "Refusing to remember an empty fact."
-        fact_id = brain.store.add_fact(fact, source)
-        return f"Remembered (fact #{fact_id}): {fact}"
+        who = scope.current_user.get() or "owner"
+        fact_id = brain.store.add_fact(fact, source or f"chat:{who}")
+        return f"Remembered (fact #{fact_id}, visible to the whole brain): {fact}"
 
     def recall(query: str = "") -> str:
         rows = (
@@ -87,8 +112,8 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             name="search_brain",
             description=(
                 "Hybrid search (full-text + embeddings, rank-fused, recency-aware) over "
-                "everything in the brain: notes, connector sources, extra paths. "
-                "Use this first for almost every question."
+                "the vaults and sources this caller can read. Use this first for almost "
+                "every question."
             ),
             parameters={
                 "query": {"type": "string", "description": "What to look for."},
@@ -102,7 +127,7 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         ToolPlugin(
             name="grep_exact",
             description=(
-                "Exact literal search across the brain's files. Use this FIRST when the "
+                "Exact literal search across readable files. Use this FIRST when the "
                 "user pastes an identifier, error message, or any literal string."
             ),
             parameters={"pattern": {"type": "string", "description": "Literal to find."}},
@@ -113,9 +138,12 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
     registry.register(
         ToolPlugin(
             name="read_file",
-            description="Read a slice of a file inside the brain, path relative to the brain root.",
+            description=(
+                "Read a slice of a file by its index key, e.g. vaults/shared/garden.md or "
+                "sources/calendar_ics/2026-09-01-standup.md — the same paths search cites."
+            ),
             parameters={
-                "path": {"type": "string", "description": "e.g. notes/projects/garden.md"},
+                "path": {"type": "string", "description": "Index key path."},
                 "start_line": {"type": "integer", "description": "1-based, default 1."},
                 "num_lines": {"type": "integer", "description": "Default 200."},
             },
@@ -126,7 +154,7 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
     registry.register(
         ToolPlugin(
             name="list_sources",
-            description="What the brain contains: indexed directories, counts, fact count.",
+            description="What this caller can read: vaults, sources, counts.",
             func=list_sources,
         )
     )
@@ -134,8 +162,9 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         ToolPlugin(
             name="remember",
             description=(
-                "Store a durable fact in long-term memory. Use when the user states "
-                "something worth keeping (preferences, decisions, dates, names)."
+                "Store a durable fact in long-term memory, visible to every user of this "
+                "brain. Use for shared preferences, decisions, dates — never for one "
+                "person's private secrets."
             ),
             parameters={
                 "fact": {"type": "string", "description": "One self-contained sentence."},
@@ -184,10 +213,12 @@ def _ripgrep(pattern: str, roots: list[str]) -> str:
     return "\n".join(shown) + tail
 
 
-def _python_grep(pattern: str, roots: list) -> str:
+def _python_grep(pattern: str, pairs: list) -> str:
     needle = pattern.lower()
     hits: list[str] = []
-    for key, path in scan_files(roots).items():
+    for key, path in scan_files(pairs).items():
+        if not scope.allows_path(key):
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
