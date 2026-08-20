@@ -23,6 +23,22 @@ CARDS = ["intro", "chat", "vault", "channels", "extend", "outro"]
 GARDEN_Q = "what's on the garden list for this weekend?"
 KYOTO_Q = "@cortex when is the Kyoto trip again — anything left to do?"
 
+PLUGIN_CODE = """from cortex.plugins import ToolPlugin
+
+
+def register(registry):
+    def bin_night(week: str = "this week") -> str:
+        return f"{week}: green bin Tuesday, recycling Friday"
+
+    registry.register(
+        ToolPlugin(
+            name="bin_night",
+            description="Which bin goes out, and when.",
+            func=bin_night,
+        )
+    )
+"""
+
 
 def main(workdir: Path) -> None:  # noqa: C901
     scenes_dir = workdir / "scenes"
@@ -139,12 +155,26 @@ def main(workdir: Path) -> None:  # noqa: C901
 
         run_scene("channels", scene_channels, storage=str(state_path))
 
-        # ---- scene 4: import + admin, quickly ----------------------------
+        # ---- scene 4: the Extend panel — write a plugin, watch it land ---
         def scene_extend(ctx, page) -> None:
-            open_app(page, "Import")
-            page.wait_for_timeout(2400)
-            page.locator(".app-tabs .tab", has_text="Admin").click()
-            page.wait_for_timeout(2800)
+            open_app(page, "Extend")
+            page.wait_for_selector(".ext-section")
+            page.wait_for_timeout(2600)
+            # write a new plugin in the browser
+            page.locator("section", has_text="Plugins").locator(
+                "button", has_text="+ New"
+            ).first.click()
+            page.wait_for_selector(".drawer .cm-content")
+            page.wait_for_timeout(900)
+            page.locator(".drawer input").first.type("bins", delay=60)
+            page.locator(".drawer .cm-content").click()
+            page.keyboard.press("Control+a")
+            page.keyboard.insert_text(PLUGIN_CODE)
+            page.wait_for_timeout(700)
+            page.locator(".drawer").get_by_role("button", name="Save").click()
+            # the row appears with the tool it registered — no restart
+            page.wait_for_selector(".ext-row:has-text('bins')", timeout=20000)
+            page.wait_for_timeout(2600)
 
         run_scene("extend", scene_extend, storage=str(state_path))
 

@@ -6,6 +6,29 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-21
+
+### Fixed
+
+- **The dashboard would not start when any MCP server was configured.**
+  `langchain-mcp-adapters` 0.2 imports `RequestContext` from
+  `mcp.shared.context`, which `mcp` 2.0 removed, and it needs
+  `langchain-core` 1.x while cortex is on 0.3 — but its declared ranges
+  express neither constraint, so a fresh install of 0.2.0 resolved to a
+  combination that cannot import. Both dependencies are now upper-bounded
+  (`langchain-mcp-adapters<0.2`, `mcp<2`), verified by an import test.
+- The MCP adapter import is guarded, so an unusable adapter costs you MCP
+  tools and reports why, instead of taking server startup down with it.
+  Per-server failures were already isolated; this module-level import was
+  the one path that was not.
+
+### Changed
+
+- The product film's fourth scene now shows the Extend panel — a plugin
+  written in the browser, saved, and appearing with the tool it registered —
+  instead of the Import and Admin tabs it was filmed with before that panel
+  existed.
+
 ## [0.2.0] - 2026-08-20
 
 First public release, published to PyPI as `cortxai`. The import name and
@@ -77,5 +100,6 @@ the CLI stay `cortex`.
 - The calendar connector does not expand recurrence rules yet.
 - Cortex hosts no model; you bring an endpoint.
 
-[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.0

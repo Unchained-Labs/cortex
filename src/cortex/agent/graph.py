@@ -84,7 +84,15 @@ async def load_mcp_tools(
     enabled = [s for s in servers if s.enabled]
     if not enabled:
         return tools, errors
-    from langchain_mcp_adapters.client import MultiServerMCPClient
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+    except ImportError as exc:
+        # An unusable adapter (a broken install, or an mcp release the
+        # adapter has not caught up with) must cost you MCP tools, not the
+        # whole brain: this import used to run unguarded and took server
+        # startup down with it.
+        errors.append(f"MCP support unavailable: {exc}")
+        return tools, errors
 
     for config in enabled:
         if config.transport == "stdio":

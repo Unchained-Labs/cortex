@@ -120,3 +120,35 @@ async def test_checkpointer_remembers_across_turns(brain, monkeypatch):
         state = await runtime.agent.aget_state({"configurable": {"thread_id": "t1"}})
     contents = [m.content for m in state.values["messages"]]
     assert "first" in contents and "second" in contents
+
+
+async def test_mcp_import_failure_does_not_kill_startup(brain, monkeypatch):
+    """An unusable MCP adapter costs you MCP tools, not the whole brain."""
+    import builtins
+
+    from cortex.agent.graph import load_mcp_tools
+    from cortex.config import McpServerConfig
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("langchain_mcp_adapters"):
+            raise ImportError("cannot import name 'RequestContext'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    tools, errors = await load_mcp_tools(
+        [McpServerConfig(name="ha", transport="http", url="http://ha.local/mcp")]
+    )
+    assert tools == []
+    assert errors and "MCP support unavailable" in errors[0]
+
+
+async def test_mcp_import_is_skipped_when_no_server_is_enabled(brain):
+    from cortex.agent.graph import load_mcp_tools
+    from cortex.config import McpServerConfig
+
+    tools, errors = await load_mcp_tools(
+        [McpServerConfig(name="off", transport="stdio", command="x", enabled=False)]
+    )
+    assert (tools, errors) == ([], [])

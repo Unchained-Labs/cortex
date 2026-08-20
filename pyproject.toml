@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cortxai"
-version = "0.2.0"
+version = "0.2.1"
 description = "A self-hosted brain for your home, your company, or any activity: pluggable local or cloud LLMs, hybrid memory, and an expandable plugin surface."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -39,8 +39,14 @@ dependencies = [
     "langchain-anthropic>=0.3",
     "langgraph>=0.2.60",
     "langgraph-checkpoint-sqlite>=2.0",
-    "langchain-mcp-adapters>=0.1",
-    "mcp>=1.9",
+    # Upper bounds, both load-bearing, both verified by an import test:
+    # adapters 0.2 needs langchain-core 1.x (we are on 0.3) and mcp 2.0
+    # dropped mcp.shared.context.RequestContext which adapters 0.2 imports.
+    # The declared ranges do not express either constraint, so an unpinned
+    # install resolves to a combination that cannot import. Lift both when
+    # moving to the langchain-core 1.x line.
+    "langchain-mcp-adapters>=0.1,<0.2",
+    "mcp>=1.9,<2",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",

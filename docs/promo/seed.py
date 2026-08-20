@@ -94,6 +94,36 @@ JOURNAL = """\
 Private to erwin — sam's vault is his own.
 """
 
+TIDES_PLUGIN = '''"""Tide times for the beach, so the agent can answer without a search."""
+
+from cortex.plugins import ToolPlugin
+
+
+def register(registry):
+    def tide_times(day: str = "today") -> str:
+        return f"{day}: low 06:40, high 12:55, low 19:10"
+
+    registry.register(
+        ToolPlugin(
+            name="tide_times",
+            description="Tide times for the local beach.",
+            parameters={"day": {"type": "string", "description": "Which day."}},
+            func=tide_times,
+        )
+    )
+'''
+
+REVIEW_SKILL = """\
+---
+name: weekly-review
+description: How this household runs its Sunday review
+---
+
+1. Search for notes touched in the last seven days.
+2. Carry unfinished tasks into next week.
+3. End with the one thing that matters on Monday.
+"""
+
 CHANNEL_SEED = [
     ("sam", "the fig tree situation is getting out of hand, the magpies had a feast"),
     ("erwin", "netting it this weekend — it's on the garden list"),
@@ -119,6 +149,23 @@ def main(workdir: Path) -> None:
         brain.store.add_user(username, pw_hash, salt, role)
         (root / "vaults" / username).mkdir(exist_ok=True)
     (root / "vaults" / "erwin" / "journal.md").write_text(JOURNAL, encoding="utf-8")
+
+    # extensions, so the Extend panel has something real on film
+    (root / "plugins" / "tides.py").write_text(TIDES_PLUGIN, encoding="utf-8")
+    (root / "skills" / "weekly-review").mkdir(parents=True, exist_ok=True)
+    (root / "skills" / "weekly-review" / "SKILL.md").write_text(
+        REVIEW_SKILL, encoding="utf-8"
+    )
+    brain.store.upsert_mcp_server(
+        "home-assistant",
+        {
+            "transport": "http",
+            "url": "http://homeassistant.local:8123/mcp",
+            "headers": {"Authorization": "Bearer redacted"},
+            "args": [], "include": [], "exclude": [], "command": "",
+        },
+        False,  # disabled: the demo has no Home Assistant to reach
+    )
 
     channel = brain.store.ensure_channel("general", "cortex")
     for author, body in CHANNEL_SEED:
