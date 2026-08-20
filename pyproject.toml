@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cortex-brain"
+version = "0.1.0"
+description = "A self-hosted brain for your home, your company, or any activity: pluggable local or cloud LLMs, hybrid memory, and an expandable plugin surface."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Unchained Labs" }]
+keywords = ["agent", "assistant", "mcp", "rag", "self-hosted"]
+dependencies = [
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://unchained-labs.github.io/cortex/"
+Repository = "https://github.com/Unchained-Labs/cortex"
+
+[project.optional-dependencies]
+server = ["fastapi>=0.115", "uvicorn>=0.30"]
+mcp = ["mcp>=1.9"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+cortex = "cortex.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cortex"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]

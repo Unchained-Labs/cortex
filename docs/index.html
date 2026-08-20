@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cortex — a self-hosted brain for any activity</title>
+<meta name="description" content="Turns a folder of notes and sources into a private brain you can chat with — on your own model, on your own machine. Pluggable providers, MCP-native plugins, hybrid retrieval.">
+<meta property="og:title" content="cortex — a self-hosted brain for any activity">
+<meta property="og:description" content="Turns a folder of notes and sources into a private brain you can chat with — on your own model, on your own machine.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/brand.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="https://unchained-labs.github.io/" aria-label="Unchained Labs">
+      <img src="assets/lockup-horizontal.svg" alt="Unchained Labs" style="height:22px">
+    </a>
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#how">How it works</a>
+      <a href="#extend">Extend</a>
+      <a href="#config">Configure</a>
+      <a href="https://github.com/Unchained-Labs/cortex">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="label">cortex</p>
+    <h1>A folder of notes becomes a brain you can talk to.</h1>
+    <p class="lead">Point cortex at your notes — home, company, club, any activity — and chat with them on your own model. Retrieval is hybrid and cited, the model endpoint is whatever you run, and every capability is a plugin you can add without forking.</p>
+    <ul class="badges">
+      <li class="badge warn">alpha</li>
+      <li class="badge up">73 tests passing</li>
+      <li class="badge">7 built-in tools</li>
+      <li class="badge">Python 3.11+</li>
+      <li class="badge">MIT</li>
+    </ul>
+    <div class="btn-row">
+      <a class="btn primary" href="#install">pip install cortex-brain</a>
+      <a class="btn" href="https://github.com/Unchained-Labs/cortex">GitHub</a>
+    </div>
+    <figure class="demo hero-demo">
+      <pre class="term" style="margin:0;border:0;border-radius:0;"><code><span class="p">$</span> <span class="c">cortex chat --brain ~/brains/home -m "when do I water the rosemary?"</span>
+<span class="dim">⚙ search_brain {'query': 'rosemary watering'}</span>
+<span class="ok">✓ search_brain (29ms)</span>
+Water the rosemary on Fridays — see notes/garden.md.</code></pre>
+      <figcaption>Real output: the agent searches before it answers and cites the file it found.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <p class="label">Install</p>
+    <h2>Three commands to a working brain</h2>
+    <pre><code>pip install 'cortex-brain[server,mcp]'
+cortex init ~/brains/home
+cortex index --brain ~/brains/home && cortex chat --brain ~/brains/home</code></pre>
+    <p><code>cortex init</code> writes a commented <code>cortex.yaml</code> pointed at
+    <code>http://localhost:11434/v1</code> (Ollama's default). Edit the endpoint and model names to
+    match what you actually run, drop markdown into <code>notes/</code> — an Obsidian vault clone
+    works as-is — and index. No model is needed to install; without an embedding endpoint,
+    search runs full-text and says so.</p>
+    <div class="note">
+      <p><strong>What it does not do.</strong> cortex hosts no model — you bring an
+      OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, OpenRouter, OpenAI) or an Anthropic
+      key. It does not crawl git forges. Vector search is exact cosine in-process: right for
+      personal- and team-sized brains, wrong for millions of chunks.</p>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <p class="label">How it works</p>
+    <h2>A directory, an index, an agent loop</h2>
+    <p class="narrow">A brain is a folder: <code>cortex.yaml</code>, your <code>notes/</code>,
+    connector output in <code>sources/</code>, and a disposable <code>.cortex/</code> cache
+    holding the SQLite index and conversation history. Back it up by copying the folder; run a
+    second brain by running <code>cortex init</code> somewhere else.</p>
+    <div class="grid three" style="margin-top:var(--ul-space-6)">
+      <div class="card">
+        <h3><code>index</code></h3>
+        <p>Markdown chunks on headings (keeping the full heading path), code on definitions.
+        Incremental by mtime+size signature. Changing the chunk schema or the embedding model
+        re-indexes from scratch — mixing vector spaces is corruption, not compatibility.</p>
+      </div>
+      <div class="card">
+        <h3><code>search</code></h3>
+        <p>FTS5 and vector cosine ranked separately, fused with reciprocal rank fusion, nudged
+        by recency. No single scorer is trusted on its own — the design from
+        <a href="https://www.cerebras.ai/blog/how-we-built-our-knowledge-base">Cerebras'
+        knowledge-base write-up</a>.</p>
+      </div>
+      <div class="card">
+        <h3><code>agent</code></h3>
+        <p>A plain while-loop: model, tool calls, results, repeat. Streaming end to end. The
+        prompt enforces search-before-answer, exact-grep for pasted literals, and citations by
+        file path. Durable facts land in memory via <code>remember</code>.</p>
+      </div>
+    </div>
+    <h3>The model is a setting, not a dependency</h3>
+    <p class="narrow">Provider profiles are declared in <code>cortex.yaml</code> and assigned
+    roles — chat and embeddings can come from different endpoints. Two wire protocols cover the
+    field: OpenAI-compatible and Anthropic. Endpoints are classified by network facts: private,
+    loopback, CGNAT and Tailscale addresses are trusted; anything public gets a plain warning
+    that your notes will leave the network, because DNS cannot prove who operates a remote
+    host.</p>
+  </div>
+</section>
+
+<section id="extend">
+  <div class="wrap">
+    <p class="label">Extend</p>
+    <h2>Four plugin surfaces, one rule: broken plugins are isolated</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Surface</th><th>Contract</th><th>When it runs</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Tool plugin</strong></td>
+            <td><code>plugins/*.py</code> exposing <code>register(registry)</code>, or a package
+            with a <code>cortex.tools</code> entry point</td>
+            <td class="num">agent time</td>
+          </tr>
+          <tr>
+            <td><strong>MCP server</strong></td>
+            <td><code>mcp_servers:</code> block — stdio or streamable HTTP; <code>exclude</code>
+            wins over <code>include</code></td>
+            <td class="num">agent time</td>
+          </tr>
+          <tr>
+            <td><strong>Skill</strong></td>
+            <td><code>skills/&lt;name&gt;/SKILL.md</code>
+            (<a href="https://agentskills.io/specification">agentskills.io</a>); the prompt lists
+            names only, instructions load lazily via <code>use_skill</code></td>
+            <td class="num">on demand</td>
+          </tr>
+          <tr>
+            <td><strong>Connector</strong></td>
+            <td><code>connectors/*.py</code> exposing <code>sync(out_dir, settings)</code>;
+            distill, don't dump — write markdown that retrieves well</td>
+            <td class="num"><code>connectors run</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="narrow">Registration is not authorization: a tool that touches something sensitive
+    keeps its own checks inside the callable.</p>
+    <h3>cortex is also an MCP server</h3>
+    <p class="narrow">The same registry the chat agent uses exports over stdio, so Claude Code,
+    Cursor, or Hermes can search your brain:</p>
+    <pre><code>claude mcp add home-brain -- cortex mcp --brain ~/brains/home</code></pre>
+  </div>
+</section>
+
+<section id="config">
+  <div class="wrap">
+    <p class="label">Configure</p>
+    <h2>One YAML file per brain</h2>
+    <pre><code>name: home
+providers:
+  local:
+    kind: openai                  # the wire protocol, not the vendor
+    base_url: "http://localhost:11434/v1"
+    chat_model: qwen3
+    embed_model: nomic-embed-text
+  claude:
+    kind: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    chat_model: claude-sonnet-5
+roles:
+  chat: claude                    # chat and embeddings can differ
+  embed: local
+mcp_servers:
+  home-assistant:
+    transport: http
+    url: "http://homeassistant.local:8123/mcp"
+connectors:
+  calendar_ics:
+    urls: {home: "https://calendar.example/private-abc.ics"}
+server:
+  auth: none                      # none = loopback only; key = ctx_ Bearer keys</code></pre>
+    <div class="grid two" style="margin-top:var(--ul-space-6)">
+      <div class="card">
+        <h3>Serving beyond localhost</h3>
+        <p>With <code>auth: none</code> the server refuses to bind anything but loopback. On a
+        LAN, set <code>auth: key</code> and issue <code>ctx_</code> keys
+        (<code>cortex keys issue laptop</code>) — shown once, stored as SHA-256, verified in
+        constant time.</p>
+      </div>
+      <div class="card">
+        <h3>Measured, not asserted</h3>
+        <p>Every model and tool call appends JSONL to <code>.cortex/usage.jsonl</code> with
+        <code>prompt_tokens</code>/<code>completion_tokens</code> when the endpoint reports them
+        — absent counts stay absent, which is what
+        <a href="https://github.com/Unchained-Labs/preflight">preflight</a> expects. Telemetry
+        never makes a call fail.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="lineage">
+  <div class="wrap">
+    <p class="label">Lineage</p>
+    <h2>What cortex borrows, and from where</h2>
+    <p class="narrow">The retrieval design (hybrid fusion, distill-don't-dump connectors) is
+    carried over from Brainiac, which borrowed it from Cerebras' knowledge base. The
+    extensibility model — built-in tools, then MCP, then skills — follows
+    <a href="https://github.com/nousresearch/hermes-agent">Hermes Agent</a>. The SQLite-first
+    storage floor exists because a home brain should not need Postgres, Qdrant, and Docker to
+    answer a question about rosemary.</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>Unchained Labs · cortex</span>
+    <nav>
+      <a href="https://github.com/Unchained-Labs/cortex">source</a>
+      <a href="https://github.com/Unchained-Labs/branding">brand</a>
+      <a href="https://www.cerebras.ai/blog/how-we-built-our-knowledge-base">retrieval design credit</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
