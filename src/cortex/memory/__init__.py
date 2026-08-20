@@ -1,7 +1,7 @@
 """Memory: an incremental index over the brain's files plus remembered facts.
 
-Retrieval design follows what worked in Brainiac and, before it, Cerebras'
-knowledge-base write-up (cerebras.ai/blog/how-we-built-our-knowledge-base):
+Retrieval design follows Cerebras' knowledge-base write-up
+(cerebras.ai/blog/how-we-built-our-knowledge-base):
 no single scorer is trusted on its own — full-text and vector rankings are
 fused with reciprocal rank fusion, then nudged by recency.
 """

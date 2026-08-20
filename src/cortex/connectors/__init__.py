@@ -1,7 +1,7 @@
 """Ingestion connectors: pull a source, distill it to markdown, done.
 
-The contract (borrowed from Brainiac, which borrowed the idea from Cerebras'
-knowledge-base write-up): information is generated wherever it is convenient,
+The contract (borrowed from Cerebras' knowledge-base write-up): information
+is generated wherever it is convenient,
 so every source is extracted where it lives and normalized into one shared
 interface — markdown files under ``sources/<connector>/``. The indexer treats
 those files like any other note.

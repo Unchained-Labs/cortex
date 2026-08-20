@@ -75,8 +75,8 @@ to full-text and says so — it never fakes a vector score.
 Hybrid search over everything indexed: SQLite FTS5 and vector cosine ranked
 separately, fused with reciprocal rank fusion, nudged by recency. No single
 scorer is trusted on its own — the design that worked in
-[Cerebras' knowledge base](https://www.cerebras.ai/blog/how-we-built-our-knowledge-base)
-and in Brainiac before this. Chunking keeps markdown heading paths and
+[Cerebras' knowledge base](https://www.cerebras.ai/blog/how-we-built-our-knowledge-base).
+Chunking keeps markdown heading paths and
 code definition boundaries, and the index re-builds itself from scratch when
 the chunk schema *or* the embedding model changes, because silently mixing
 vector spaces is corruption, not compatibility.
