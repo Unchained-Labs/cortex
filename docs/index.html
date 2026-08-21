@@ -27,6 +27,7 @@
       <a href="#dashboard">Dashboard</a>
       <a href="#stack">Stack</a>
       <a href="#extend">Extend</a>
+      <a href="#restraint">Restraint</a>
       <a href="https://github.com/Unchained-Labs/cortex">GitHub</a>
     </nav>
   </div>
@@ -38,10 +39,10 @@
   <div class="wrap">
     <p class="label">cortex</p>
     <h1>A brain your whole household can talk to.</h1>
-    <p class="lead">Shared and personal vaults with Obsidian-style editing, peer chat channels, and an agent that searches your notes before it answers — all on a model you run yourself. Home brain, company brain, club brain: one folder each.</p>
+    <p class="lead">Capture a thought in one keystroke, ask about it later and get a cited answer, and see what is on today — all on a model you run yourself. Shared and personal vaults, peer chat, Obsidian-style editing. Home brain, company brain, club brain: one folder each.</p>
     <ul class="badges">
       <li class="badge warn">alpha</li>
-      <li class="badge up">102 tests passing</li>
+      <li class="badge up">138 tests passing</li>
       <li class="badge">LangGraph + LangChain</li>
       <li class="badge">Python 3.11+ · React 18</li>
       <li class="badge">MIT</li>
@@ -81,8 +82,25 @@ cortex serve --host 0.0.0.0   # dashboard on :8642</code></pre>
 <section id="dashboard">
   <div class="wrap">
     <p class="label">Dashboard</p>
-    <h2>Five views, one brain</h2>
+    <h2>Open it for Today, stay for the rest</h2>
     <div class="grid three" style="margin-top:var(--ul-space-6)">
+      <div class="card">
+        <h3>Today</h3>
+        <p>The default view: what is on, a few open tasks you tick straight from the list,
+        what changed, and what you wrote on this date in earlier years. Computed without the
+        model, so it answers instantly — and works on a brain with no model configured at all.</p>
+      </div>
+      <div class="card">
+        <h3>Capture</h3>
+        <p>Press <code>c</code> anywhere, or run <code>cortex note "…"</code>. One line into
+        today's daily note. No folder to choose, no title to invent — search does not care
+        which note a line is in.</p>
+      </div>
+      <div class="card">
+        <h3>Search</h3>
+        <p>Full-text and vector search fused, over everything you are allowed to read, from
+        <code>/</code> anywhere. It keeps working when the model box is off.</p>
+      </div>
       <div class="card">
         <h3>Chat</h3>
         <p>Private agent threads. Tool calls stream as they run; answers cite files by path,
@@ -186,6 +204,9 @@ roles:
         </tbody>
       </table>
     </div>
+    <p class="narrow">The agent can write, narrowly: add a line to today's note, tick a task
+    by exact path and line, save a web page as markdown. There is no general write-any-file
+    tool — on a vault with no version control, that narrowness is the safety property.</p>
     <p class="narrow">Registration is not authorization: a tool that touches something
     sensitive keeps its own checks inside the callable. Remembered facts are brain-wide by
     design — a household brain wants "we water the rosemary on Fridays" visible to everyone,
@@ -202,6 +223,23 @@ roles:
       same trust level as configuring a stdio MCP server. That is why the panel is admin-only.
       <code>cortex ext list|enable|disable|delete</code> does the same from a terminal.</p>
     </div>
+  </div>
+</section>
+
+<section id="restraint">
+  <div class="wrap">
+    <p class="label">Restraint</p>
+    <h2>What it will not do to keep you coming back</h2>
+    <p class="narrow">No streaks, no daily-open counter, no "you have not opened cortex in
+    three days". The daily view is <strong>bounded</strong>: it shows a handful of tasks and
+    then says that is everything for today. It never shows a growing count of what you have
+    not done — that is a debt counter, and the products that shipped one document the same
+    outcome, which is that people stop opening them.</p>
+    <p class="narrow">The digest is a fact, not an opinion: it is computed from your files
+    without asking a model, so it cannot invent a reason to ping you, takes no time to
+    produce, and works when the model box is off. Every large "AI decides what you need each
+    morning" product shipped since 2024 has since been retired or reworked. On a tool you host
+    yourself, your absence is not a problem to be solved.</p>
   </div>
 </section>
 
