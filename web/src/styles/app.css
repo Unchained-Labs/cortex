@@ -122,11 +122,15 @@ kbd {
  * pushes the whole page sideways instead of scrolling in its own well. */
 .grid > * { min-width: 0; }
 
-.app-main { flex: 1; min-height: 0; display: flex; }
-.view { flex: 1; min-height: 0; display: flex; }
+/* Flex items default to min-width:auto, so one long path or one unwrapped
+ * line of code used to widen the whole page instead of scrolling in place.
+ * Every layout box down to the scroller opts out. */
+.app-main { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.view { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .view.hidden { display: none; }
+.today-view, .import-view, .admin-view, .extend-view { min-width: 0; }
 
-.split { display: flex; flex: 1; min-height: 0; width: 100%; }
+.split { display: flex; flex: 1; min-height: 0; min-width: 0; width: 100%; }
 
 .side {
   width: 250px;
@@ -423,7 +427,7 @@ select { cursor: pointer; }
 .seg-btn.active { background: var(--ul-accent); color: var(--ul-on-accent); }
 .seg-btn:not(.active):hover { color: var(--ul-heading); }
 
-.editor-host { flex: 1; min-height: 0; overflow: hidden; }
+.editor-host { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .editor-host .cm-editor { height: 100%; }
 
 .preview-scroll {
@@ -561,7 +565,9 @@ select { cursor: pointer; }
 
 .admin-users td { vertical-align: middle; }
 .admin-when { white-space: nowrap; }
-.admin-row-actions { display: flex; flex-wrap: wrap; gap: var(--ul-space-2); justify-content: flex-end; }
+/* nowrap keeps the row one line tall; the table scrolls in its own well. */
+.admin-row-actions { display: flex; flex-wrap: nowrap; gap: var(--ul-space-2); justify-content: flex-end; }
+.admin-row-actions .btn { white-space: nowrap; }
 
 /* stats as labelled figures, tools as pills — /api/info used to land as raw
  * JSON, which is a debug view, not an answer. */
@@ -1007,9 +1013,14 @@ select { cursor: pointer; }
 
 /* ---- responsive ---------------------------------------------------------- */
 
-@media (max-width: 760px) {
-  /* The header is one row: a short tab strip that scrolls sideways, with the
-   * brand and the user controls above it. */
+/* The brand and the user strip are fixed furniture; only the tabs scroll. */
+.site-head .brand { flex: none; }
+.app-user { flex: none; }
+.user-button { white-space: nowrap; }
+
+/* Below this the tab strip cannot share a row with the brand and the user
+ * controls without squeezing all three, so it gets its own row. */
+@media (max-width: 900px) {
   .site-head .wrap { min-height: 0; gap: var(--ul-space-2); flex-wrap: wrap; }
   .app-head { padding-top: var(--ul-space-2); padding-bottom: 0; }
   .site-head nav.app-tabs {
@@ -1022,7 +1033,9 @@ select { cursor: pointer; }
   .tab { min-height: 38px; padding: var(--ul-space-2); }
   .app-user { gap: var(--ul-space-2); }
   .capture-btn kbd, .user-role { display: none; }
+}
 
+@media (max-width: 760px) {
   .split { flex-direction: column; }
   /* 34% of a 844px phone is a third of the screen spent on a file list. The
    * list gets what it needs up to a cap, and the pane keeps the rest. */
