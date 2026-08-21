@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiSend, ApiError, rawUrl } from "../api";
 import { wsSubscribe } from "../ws";
-import type { VaultMeta, VaultFile } from "../types";
+import type { VaultMeta, VaultFile, IndexedFile } from "../types";
 import type { VaultTarget } from "../App";
 import { buildTree, type TreeNode } from "../lib/tree";
+import { useUnloadGuard } from "../lib/modal";
 import { splitFrontmatter, toggleTask, resolveTarget, isImagePath } from "../lib/obsidian";
 import Editor from "../components/Editor";
 import Markdown from "../components/Markdown";
@@ -80,6 +81,8 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newPath, setNewPath] = useState<string | null>(null); // null = closed
+  /** a `sources/…` file opened through /api/file: readable, never writable */
+  const [source, setSource] = useState<IndexedFile | null>(null);
   const seenNonce = useRef(0);
 
   const vaultRef = useRef(vault);
@@ -90,9 +93,26 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
   const savingRef = useRef(false);
   const openPathRef = useRef(openPath);
   openPathRef.current = openPath;
-  const dirty = text !== savedText;
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const dirty = source === null && text !== savedText;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+
+  // A reload used to take unsaved edits with it, silently.
+  useUnloadGuard(dirty);
+
+  /**
+   * Every way out of an open buffer funnels through here. The `dirty` flag
+   * existed but nothing consulted it, so clicking another file — or another
+   * vault — threw the edit away with no warning at all.
+   */
+  const confirmDiscard = useCallback((what: string): boolean => {
+    if (!dirtyRef.current) return true;
+    return window.confirm(
+      `${openPathRef.current ?? "This file"} has unsaved changes.\n\n${what}`,
+    );
+  }, []);
 
   const loadTree = useCallback(async (v: string): Promise<VaultFile[]> => {
     const r = await apiGet<{ vault: string; files: VaultFile[] }>(
@@ -106,6 +126,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
     setError(null);
     setConflict(null);
     setNotice(null);
+    setSource(null);
     if (!path.endsWith(".md") && !path.endsWith(".txt")) {
       // binary/attachment: preview only
       setOpenPath(path);
@@ -128,6 +149,30 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
     }
   }, []);
 
+  /**
+   * A digest item under `sources/…` (a calendar event) is a real file the
+   * caller may read but must never edit. `/api/file` serves it by index key
+   * and says so with `editable`.
+   */
+  const openSource = useCallback(async (key: string) => {
+    setError(null);
+    setConflict(null);
+    setNotice(null);
+    setMode("preview");
+    try {
+      const r = await apiGet<IndexedFile>(`/api/file?path=${encodeURIComponent(key)}`);
+      setSource(r);
+      setOpenPath(r.path);
+      setText(r.text);
+      setSavedText(r.text);
+      setBaseMtime(null);
+    } catch (e) {
+      setSource(null);
+      setOpenPath(null);
+      setError(e instanceof Error ? e.message : "failed to open file");
+    }
+  }, []);
+
   const selectVault = useCallback(
     async (v: string, openAfter?: string) => {
       setVault(v);
@@ -136,6 +181,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
       setSavedText("");
       setConflict(null);
       setNotice(null);
+      setSource(null);
       setCollapsed(new Set());
       try {
         await loadTree(v);
@@ -160,13 +206,14 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
       .catch(() => {});
   }, [selectVault]);
 
-  // Citation navigation from Chat.
+  // Citation navigation from Chat, Search and Today.
   useEffect(() => {
-    if (target && target.nonce !== seenNonce.current) {
-      seenNonce.current = target.nonce;
-      void selectVault(target.vault, target.path);
-    }
-  }, [target, selectVault]);
+    if (!target || target.nonce === seenNonce.current) return;
+    seenNonce.current = target.nonce;
+    if (!confirmDiscard("Open the linked file anyway and lose them?")) return;
+    if (target.vault === "") void openSource(target.key);
+    else void selectVault(target.vault, target.path);
+  }, [target, selectVault, openSource, confirmDiscard]);
 
   // Another session saved a file we may have open.
   useEffect(
@@ -190,6 +237,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
     async (forceBase?: number) => {
       const v = vaultRef.current;
       const p = openPathRef.current;
+      if (sourceRef.current) return; // not a vault file — nothing to write to
       if (!v || !p || (!p.endsWith(".md") && !p.endsWith(".txt"))) return;
       if (savingRef.current) return;
       savingRef.current = true;
@@ -237,12 +285,26 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
     [files],
   );
 
+  /** Tree click, wikilink — anything the reader initiates. */
+  const navigateTo = (path: string) => {
+    const v = vaultRef.current;
+    if (!v || path === openPathRef.current) return;
+    if (!confirmDiscard(`Open ${path} anyway and lose them?`)) return;
+    void openFile(v, path);
+  };
+
   const onWikilink = (targetName: string) => {
     const v = vaultRef.current;
     if (!v) return;
     const resolved = resolveTarget(targetName, filePaths);
-    if (resolved) void openFile(v, resolved);
+    if (resolved) navigateTo(resolved);
     else setNotice(`No note matching [[${targetName}]] in this vault.`);
+  };
+
+  const pickVault = (v: string) => {
+    if (v === vaultRef.current) return;
+    if (!confirmDiscard(`Switch to the ${v} vault anyway and lose them?`)) return;
+    void selectVault(v);
   };
 
   const onTaskToggle = (index: number) => {
@@ -290,7 +352,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
   const deleteFile = async () => {
     const v = vaultRef.current;
     const p = openPathRef.current;
-    if (!v || !p) return;
+    if (!v || !p || sourceRef.current) return;
     if (!window.confirm(`Delete ${p} from ${v}?`)) return;
     try {
       await apiSend("DELETE", `/api/vault/file?vault=${encodeURIComponent(v)}&path=${encodeURIComponent(p)}`);
@@ -309,8 +371,11 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
     if (v && p) void openFile(v, p);
   };
 
-  const editable = !!openPath && (openPath.endsWith(".md") || openPath.endsWith(".txt"));
-  const fm = editable && mode === "preview" ? splitFrontmatter(text) : null;
+  const readOnly = source !== null && !source.editable;
+  const editable =
+    !readOnly && !!openPath && (openPath.endsWith(".md") || openPath.endsWith(".txt"));
+  const textual = editable || readOnly;
+  const fm = textual && mode === "preview" ? splitFrontmatter(text) : null;
 
   return (
     <div className="vault split" onKeyDown={onKeyDown}>
@@ -318,8 +383,9 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
         <div className="side-head">
           <select
             className="vault-picker mono"
+            aria-label="Vault"
             value={vault ?? ""}
-            onChange={(e) => void selectVault(e.target.value)}
+            onChange={(e) => pickVault(e.target.value)}
           >
             {vault === null && <option value="">— vault —</option>}
             {vaults.map((v) => (
@@ -340,6 +406,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
           <form className="side-form" onSubmit={createFile}>
             <input
               autoFocus
+              aria-label="New file path"
               placeholder="folder/note.md"
               value={newPath}
               onChange={(e) => setNewPath(e.target.value)}
@@ -359,7 +426,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
                 return next;
               })
             }
-            onOpen={(p) => vault && void openFile(vault, p)}
+            onOpen={navigateTo}
             depth={0}
           />
           {files.length === 0 && <p className="side-empty muted">Empty vault.</p>}
@@ -375,35 +442,43 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
                 {dirty && <span className="dirty-dot" title="unsaved changes" />}
               </span>
               <div className="editor-actions">
-                {editable && (
+                {/* A source file has no editor and no Save or Delete: the
+                    server would refuse the write, so the UI does not offer it. */}
+                {readOnly ? (
+                  <span className="readonly-flag">Read-only source</span>
+                ) : (
                   <>
-                    <div className="seg">
-                      <button
-                        className={mode === "edit" ? "seg-btn active" : "seg-btn"}
-                        onClick={() => setMode("edit")}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className={mode === "preview" ? "seg-btn active" : "seg-btn"}
-                        onClick={() => setMode("preview")}
-                      >
-                        Preview
-                      </button>
-                    </div>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => void save()}
-                      disabled={!dirty}
-                      title="Ctrl+S"
-                    >
-                      Save
+                    {editable && (
+                      <>
+                        <div className="seg">
+                          <button
+                            className={mode === "edit" ? "seg-btn active" : "seg-btn"}
+                            onClick={() => setMode("edit")}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className={mode === "preview" ? "seg-btn active" : "seg-btn"}
+                            onClick={() => setMode("preview")}
+                          >
+                            Preview
+                          </button>
+                        </div>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => void save()}
+                          disabled={!dirty}
+                          title="Ctrl+S"
+                        >
+                          Save
+                        </button>
+                      </>
+                    )}
+                    <button className="btn btn-sm danger" onClick={() => void deleteFile()}>
+                      Delete
                     </button>
                   </>
                 )}
-                <button className="btn btn-sm danger" onClick={() => void deleteFile()}>
-                  Delete
-                </button>
               </div>
             </div>
 
@@ -439,8 +514,8 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
               </div>
             )}
 
-            {editable ? (
-              mode === "edit" ? (
+            {textual ? (
+              editable && mode === "edit" ? (
                 <Editor
                   docKey={`${vault}:${openPath}`}
                   initialText={text}
@@ -465,10 +540,10 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
                   )}
                   <Markdown
                     text={fm ? fm.body : text}
-                    resolveEmbed={resolveEmbed}
-                    interactiveTasks
-                    onWikilink={onWikilink}
-                    onTaskToggle={onTaskToggle}
+                    resolveEmbed={readOnly ? undefined : resolveEmbed}
+                    interactiveTasks={!readOnly}
+                    onWikilink={readOnly ? undefined : onWikilink}
+                    onTaskToggle={readOnly ? undefined : onTaskToggle}
                   />
                 </div>
               )

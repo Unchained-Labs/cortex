@@ -38,6 +38,19 @@ calendar connector expands no recurrence rules yet.
 
 ## The dashboard
 
+- **Today** — the default view and the reason to open it: what is on today,
+  a few open tasks you can tick straight from the list, what changed, and
+  anything you wrote on this date in earlier years. Computed without the
+  model, so it answers instantly and works on a brain with no model
+  configured at all. It is deliberately **bounded** — a handful of tasks and
+  then "that is everything for today", never a growing pile of everything
+  you have not done.
+- **Capture** — press **c** anywhere. One line, Enter, and it lands in
+  today's daily note. Also `cortex note "..."` from a terminal, and the
+  agent can do it for you. Filing is optional; search does not care which
+  note a line is in.
+- **Search** — hybrid full-text and vector search over everything you can
+  read, with **/** from anywhere.
 - **Chat** — private threads with the agent. It searches before it answers,
   streams its tool calls (⚙ `search_brain` … ✓ 33ms), and cites files by
   path; clicking a citation opens it in the vault view.
@@ -52,7 +65,13 @@ calendar connector expands no recurrence rules yet.
 - **Import** — bring an existing Obsidian vault as a zip upload, a git URL,
   or a server path. `.obsidian/`, `.git/` and non-vault file types are
   skipped.
-- **Admin** — accounts (`admin` / `member`), index stats.
+- **Admin** — accounts (`admin` / `member`), index and model health, and a
+  way to re-index without a terminal.
+
+The agent can write, narrowly: it can add a line to today's note, tick a
+task by exact path and line, and save a web page as markdown. There is no
+general "write any file" tool — on a vault with no version control, the
+narrowness is the safety property.
 
 Accounts are username + password (scrypt), sessions are HttpOnly cookies.
 Each user sees the shared vault, their own vault, and connector sources —
@@ -145,6 +164,18 @@ Cursor, or Hermes the same tool registry, at box-owner scope.
 
 Back it up by copying the folder. Home brain, company brain, club brain:
 three folders, three `cortex serve` processes.
+
+```sh
+cortex note "the boiler service is due in March"   # capture, from anywhere
+cortex today                                       # what is on
+cortex clip https://example.com/recipe             # save a page as markdown
+cortex demo                                        # example notes for an empty brain
+cortex service install                             # keep it running across reboots
+```
+
+An empty brain cannot help you, so `cortex setup` offers to import an
+existing vault, indexes what it finds, and `cortex demo` seeds a few
+obviously-fake example notes you can delete in one command.
 
 ## Observability
 

@@ -33,6 +33,7 @@ class Brain:
         self.skills: list = []
         self.registry = ToolRegistry()
         self.load_extensions()
+        self._reindex_hook = None
         self._chat_model: BaseChatModel | None = None
         self._embedder: Embedder | None = None
         self._embedder_checked = False
@@ -55,6 +56,13 @@ class Brain:
         )
         registry.load_entry_points()
         self.registry = registry
+
+    def request_reindex(self) -> None:
+        """Ask the host to re-index soon. The dashboard wires this to its
+        debounced worker; the CLI and MCP export leave it a no-op, since
+        they re-index on their own schedule."""
+        if self._reindex_hook is not None:
+            self._reindex_hook()
 
     def mcp_servers(self) -> list:
         from cortex.extensions import effective_mcp_servers

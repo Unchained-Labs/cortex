@@ -11,7 +11,7 @@ body { overflow: hidden; }
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ul-faint);
+  color: var(--ul-muted);
   letter-spacing: var(--ul-track-label);
 }
 
@@ -19,7 +19,22 @@ body { overflow: hidden; }
 
 .app-head { width: 100%; max-width: none; }
 
-.app-tabs { display: flex; gap: var(--ul-space-1); margin-left: var(--ul-space-4); }
+/* brand.css `.site-head nav { flex-wrap: wrap; margin-left: auto }` is a
+ * marketing-site rule, and it outspecifies a bare `.app-tabs` — which is
+ * exactly how eight tabs became five 60px rows on a phone. Matching its
+ * specificity is the fix; the tab bar is one strip that scrolls sideways. */
+.site-head nav.app-tabs {
+  display: flex;
+  gap: var(--ul-space-1);
+  margin-left: var(--ul-space-4);
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.site-head nav.app-tabs::-webkit-scrollbar { display: none; }
 
 .tab {
   appearance: none;
@@ -27,6 +42,8 @@ body { overflow: hidden; }
   border: 0;
   border-bottom: 2px solid transparent;
   cursor: pointer;
+  flex: none;
+  white-space: nowrap;
   font-family: var(--ul-font-display);
   font-size: var(--ul-text-sm);
   font-weight: 600;
@@ -35,7 +52,7 @@ body { overflow: hidden; }
   min-height: 60px;
 }
 .tab:hover { color: var(--ul-heading); }
-.tab.active { color: var(--ul-accent); border-bottom-color: var(--ul-accent); }
+.tab.active, .tab[aria-selected="true"] { color: var(--ul-accent); border-bottom-color: var(--ul-accent); }
 
 .app-user {
   margin-left: auto;
@@ -46,12 +63,64 @@ body { overflow: hidden; }
 .user-name { font-size: var(--ul-text-sm); color: var(--ul-body); }
 .user-role { color: var(--ul-accent); }
 
+/* ---- contrast -----------------------------------------------------------
+ * --ul-faint is 3.16:1 — large-text/UI only. This app renders it at 12px for
+ * real reading matter (labels, timestamps, tool previews, placeholders), so
+ * every text use here moves to --ul-muted (5.13:1). It stays only on
+ * decorative glyphs, which is what the token is for. */
+.label, .faint, th, figcaption { color: var(--ul-muted); }
+input::placeholder, textarea::placeholder { color: var(--ul-muted); }
+.tool-lat, .tool-preview { color: var(--ul-muted); }
+.app-loading, .path-plain, .search-mode, .md-embed-missing, .field > span {
+  color: var(--ul-muted);
+}
+
 .btn { cursor: pointer; }
-.btn:disabled { opacity: 0.45; cursor: default; }
+/* Disabled is a different surface, not a faded one: opacity alone left a dead
+ * Send button looking like a live one. */
+.btn:disabled,
+.btn:disabled:hover {
+  opacity: 1;
+  cursor: default;
+  background: var(--ul-bg-inset);
+  border-color: var(--ul-line);
+  color: var(--ul-muted);
+}
 .btn.btn-sm { padding: 0.25em 0.7em; font-size: var(--ul-text-xs); }
 .btn.danger:hover { border-color: var(--ul-down); color: var(--ul-down); }
 
+kbd {
+  font-size: 0.9em;
+  color: var(--ul-muted);
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius-sm);
+  padding: 0 0.35em;
+}
+
+.capture-btn { display: inline-flex; align-items: center; gap: 0.5em; }
+.capture-btn kbd { color: var(--ul-accent); border-color: var(--ul-accent-dim); }
+.shortcut-btn { font-family: var(--ul-font-mono); padding: 0.25em 0.6em; }
+
+.shortcut-pop {
+  position: absolute;
+  right: var(--ul-space-6);
+  top: 100%;
+  z-index: 25;
+  min-width: 15em;
+  background: var(--ul-bg-raised);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius);
+  padding: var(--ul-space-3) var(--ul-space-4);
+}
+.shortcut-pop p { margin: 0 0 var(--ul-space-1); font-size: var(--ul-text-sm); color: var(--ul-body); }
+.shortcut-pop p:last-child { margin-bottom: 0; }
+
 /* ---- main / split layout ----------------------------------------------- */
+
+/* Grid children default to min-width:auto, so a wide table inside a card
+ * pushes the whole page sideways instead of scrolling in its own well. */
+.grid > * { min-width: 0; }
 
 .app-main { flex: 1; min-height: 0; display: flex; }
 .view { flex: 1; min-height: 0; display: flex; }
@@ -116,7 +185,10 @@ body { overflow: hidden; }
   vertical-align: middle;
 }
 
-.pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* `.pane` is a <section>, and brand.css gives every section 4rem of vertical
+ * padding — a marketing-page rhythm that here just fenced 128px of dead space
+ * around the message list and the editor. An app pane is full-bleed. */
+.pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 0; }
 .pane-empty { padding: var(--ul-space-8); }
 
 /* ---- messages (chat + channels) ---------------------------------------- */
@@ -187,9 +259,9 @@ body { overflow: hidden; }
 .tool-ok .tool-glyph { color: var(--ul-up); }
 .tool-fail .tool-glyph, .tool-fail .tool-preview { color: var(--ul-down); }
 .tool-name { color: var(--ul-body); }
-.tool-lat { color: var(--ul-faint); }
+.tool-lat { color: var(--ul-muted); }
 .tool-preview {
-  color: var(--ul-faint);
+  color: var(--ul-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -223,7 +295,7 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--ul-accent-dim);
   box-shadow: var(--ul-ring);
 }
-input::placeholder, textarea::placeholder { color: var(--ul-faint); }
+input::placeholder, textarea::placeholder { color: var(--ul-muted); }
 input[type="file"] { font-size: var(--ul-text-sm); color: var(--ul-muted); }
 select { cursor: pointer; }
 
@@ -234,7 +306,7 @@ select { cursor: pointer; }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: var(--ul-track-label);
-  color: var(--ul-faint);
+  color: var(--ul-muted);
 }
 
 .form-error { color: var(--ul-down); font-size: var(--ul-text-sm); margin: var(--ul-space-2) 0; }
@@ -420,7 +492,7 @@ select { cursor: pointer; }
 .md-embed-missing {
   font-family: var(--ul-font-mono);
   font-size: 0.85em;
-  color: var(--ul-faint);
+  color: var(--ul-muted);
   border: 1px dashed var(--ul-line-strong);
   border-radius: var(--ul-radius-sm);
   padding: 0.05em 0.4em;
@@ -462,19 +534,63 @@ select { cursor: pointer; }
   padding: var(--ul-space-8) 0;
 }
 .import-grid .card { display: flex; flex-direction: column; gap: var(--ul-space-3); }
+.import-grid .field { margin-bottom: 0; }
 .import-grid .card p { margin: 0; }
 .import-grid .btn { align-self: flex-start; }
 
 .admin-create { margin-top: var(--ul-space-4); }
-.admin-create-row { display: flex; flex-wrap: wrap; gap: var(--ul-space-2); }
-.admin-create-row input, .admin-create-row select { font-size: var(--ul-text-sm); }
-.admin-create-row input { flex: 1; min-width: 10em; }
+.admin-create-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--ul-space-2);
+  align-items: end;
+}
+.admin-create-row .field { margin-bottom: 0; min-width: 0; }
+.admin-create-row input, .admin-create-row select { font-size: var(--ul-text-sm); min-width: 0; }
+.admin-create-row .btn { justify-content: center; grid-column: 1 / -1; }
 
-.info-json {
-  margin: 0;
-  font-size: var(--ul-text-xs);
-  max-height: 16em;
-  overflow: auto;
+.admin-reset {
+  margin-top: var(--ul-space-3);
+  padding: var(--ul-space-3);
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+}
+.admin-reset .field { margin-bottom: var(--ul-space-2); }
+.admin-reset-actions { display: flex; gap: var(--ul-space-2); justify-content: flex-end; }
+
+.admin-users td { vertical-align: middle; }
+.admin-when { white-space: nowrap; }
+.admin-row-actions { display: flex; flex-wrap: wrap; gap: var(--ul-space-2); justify-content: flex-end; }
+
+/* stats as labelled figures, tools as pills — /api/info used to land as raw
+ * JSON, which is a debug view, not an answer. */
+.info-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--ul-space-3);
+  margin-bottom: var(--ul-space-4);
+}
+.info-fig { min-width: 0; }
+.info-fig .fig {
+  font-family: var(--ul-font-mono);
+  font-size: var(--ul-text-xl);
+  color: var(--ul-heading);
+  line-height: 1.1;
+  display: block;
+}
+.info-fig .label { margin: 0; }
+
+.info-rows { display: flex; flex-direction: column; gap: var(--ul-space-3); }
+.info-row { min-width: 0; }
+.info-row .label { margin: 0 0 var(--ul-space-1); }
+.info-row-value { font-size: var(--ul-text-sm); color: var(--ul-body); overflow-wrap: anywhere; }
+.info-row-value.mono { font-size: var(--ul-text-xs); }
+.info-pills { display: flex; flex-wrap: wrap; gap: var(--ul-space-1); }
+
+/* Admin is two dense cards; below this they stack rather than clip. */
+@media (max-width: 900px) {
+  .admin-view .grid.two { grid-template-columns: 1fr; }
 }
 
 /* ---- extend -------------------------------------------------------------- */
@@ -574,13 +690,16 @@ select { cursor: pointer; }
 
 /* ---- extension drawer ---------------------------------------------------- */
 
+/* The scrim is opaque enough to read as modal — at 72% the page behind it
+ * still looked live, which is why a stray click on it felt like a miss. */
 .drawer-scrim {
   position: fixed;
   inset: 0;
   z-index: 20;
   display: flex;
   justify-content: flex-end;
-  background: color-mix(in srgb, var(--ul-bg) 72%, transparent);
+  background: color-mix(in srgb, var(--ul-bg-inset) 88%, transparent);
+  backdrop-filter: blur(2px);
 }
 .drawer {
   width: min(760px, 100%);
@@ -627,15 +746,295 @@ select { cursor: pointer; }
 }
 .kv-row input { flex: 1; min-width: 0; font-size: var(--ul-text-sm); }
 
+/* ---- today --------------------------------------------------------------- */
+
+.today-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-8) 0;
+}
+.today-wrap { max-width: 900px; }
+
+.today-head { margin-bottom: var(--ul-space-6); }
+.today-head h2 { margin-bottom: var(--ul-space-1); }
+.today-stats { font-size: var(--ul-text-sm); color: var(--ul-muted); margin: 0; }
+
+.today-section { padding: 0; margin-bottom: var(--ul-space-6); border: 0; }
+.today-section + .today-section { border-top: 0; }
+.today-section .label { margin-bottom: var(--ul-space-2); }
+
+.today-list { list-style: none; margin: 0; padding: 0; }
+.today-list > li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ul-space-3);
+  padding: var(--ul-space-2) 0;
+  border-top: 1px solid var(--ul-line);
+  font-size: var(--ul-text-sm);
+}
+.today-list > li:first-child { border-top: 0; }
+
+.event-when { color: var(--ul-accent); flex: none; min-width: 6.5em; }
+.event-title { color: var(--ul-heading); flex: 1; min-width: 0; }
+
+.task-row { align-items: flex-start; }
+.task-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ul-space-2);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.task-check input {
+  accent-color: var(--ul-accent);
+  cursor: pointer;
+  margin: 0.25em 0 0;
+  flex: none;
+}
+.task-check input:disabled { cursor: default; }
+.task-text { color: var(--ul-heading); }
+.task-done { color: var(--ul-muted); text-decoration: line-through; }
+
+.changed-row { justify-content: space-between; }
+.changed-row .path-link, .changed-row .path-plain { max-width: none; text-align: left; }
+.changed-at { font-size: var(--ul-text-xs); flex: none; }
+
+.today-more { font-size: var(--ul-text-xs); margin: var(--ul-space-2) 0 0; }
+
+.path-link,
+.path-plain {
+  font-size: var(--ul-text-xs);
+  max-width: 32em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* shrink-and-ellipsis rather than push the row wider than the phone */
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+.path-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ul-muted);
+}
+.path-link:hover { color: var(--ul-accent); }
+.path-plain { color: var(--ul-muted); }
+
+.start-here .lead { margin-bottom: var(--ul-space-6); max-width: 46em; }
+.start-grid .start-card { display: flex; flex-direction: column; gap: var(--ul-space-3); }
+.start-card h3 { margin: 0; font-size: var(--ul-text-base); }
+.start-card p { flex: 1; }
+.start-card .btn { align-self: flex-start; }
+
+/* ---- search -------------------------------------------------------------- */
+
+.search-view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ul-space-3);
+  padding: var(--ul-space-3) var(--ul-space-6);
+  border-bottom: 1px solid var(--ul-line);
+  background: var(--ul-bg-raised);
+}
+.search-input { flex: 1; min-width: 0; max-width: 46rem; }
+.search-busy { font-size: var(--ul-text-xs); }
+
+.search-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-4) var(--ul-space-6);
+}
+.search-scroll > * { max-width: 56rem; }
+.search-meta { font-size: var(--ul-text-xs); color: var(--ul-muted); margin: 0 0 var(--ul-space-4); }
+.search-mode { color: var(--ul-muted); }
+
+.search-hit { margin-bottom: var(--ul-space-4); }
+.search-hit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ul-space-3);
+  margin-bottom: var(--ul-space-1);
+}
+.search-hit-head .path-link,
+.search-hit-head .path-plain {
+  font-size: var(--ul-text-sm);
+  max-width: none;
+  text-align: left;
+  color: var(--ul-accent);
+}
+.search-hit-head .path-plain { color: var(--ul-body); }
+.search-score { font-size: var(--ul-text-xs); flex: none; }
+
+.passage {
+  display: block;
+  width: 100%;
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  background: var(--ul-bg-raised);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+  padding: var(--ul-space-2) var(--ul-space-3);
+  margin-bottom: var(--ul-space-2);
+  font-family: var(--ul-font-body);
+}
+.passage:hover { border-color: var(--ul-accent-dim); }
+.passage:disabled { cursor: default; }
+.passage-head {
+  display: block;
+  font-size: var(--ul-text-xs);
+  color: var(--ul-muted);
+  margin-bottom: var(--ul-space-1);
+}
+/* clipped on a line boundary, so a long passage never ends mid-glyph */
+.passage-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  font-size: var(--ul-text-sm);
+  color: var(--ul-body);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: hidden;
+}
+
+/* ---- capture ------------------------------------------------------------- */
+
+.capture-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  background: color-mix(in srgb, var(--ul-bg-inset) 88%, transparent);
+  backdrop-filter: blur(2px);
+}
+.capture-box {
+  width: min(560px, calc(100% - var(--ul-space-8)));
+  background: var(--ul-bg-raised);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius-lg);
+  padding: var(--ul-space-4);
+}
+.capture-label { margin-bottom: var(--ul-space-2); }
+.capture-input { width: 100%; font-size: var(--ul-text-base); }
+.capture-hint,
+.capture-result,
+.capture-error {
+  margin: var(--ul-space-2) 0 0;
+  font-size: var(--ul-text-xs);
+}
+.capture-ok { color: var(--ul-up); }
+.capture-where { color: var(--ul-body); }
+
+/* ---- health banners ------------------------------------------------------ */
+
+.health-bar { flex: none; }
+.health-bar .banner { margin: 0; border-bottom: 1px solid var(--ul-line); }
+.health-text { min-width: 0; overflow-wrap: anywhere; }
+.health-text strong { color: var(--ul-heading); font-weight: 600; }
+.health-detail { display: block; color: var(--ul-muted); font-size: var(--ul-text-xs); }
+
+/* ---- account dialog ------------------------------------------------------ */
+
+.user-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed var(--ul-line-strong);
+  cursor: pointer;
+  padding: 0.1em 0;
+  font-family: var(--ul-font-mono);
+  font-size: var(--ul-text-sm);
+  color: var(--ul-body);
+}
+.user-button:hover { color: var(--ul-accent); border-bottom-color: var(--ul-accent-dim); }
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh var(--ul-space-4) var(--ul-space-4);
+  background: color-mix(in srgb, var(--ul-bg-inset) 88%, transparent);
+  backdrop-filter: blur(2px);
+  overflow-y: auto;
+}
+.modal-card {
+  width: min(420px, 100%);
+  background: var(--ul-bg-raised);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius-lg);
+  padding: var(--ul-space-4);
+}
+.modal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ul-space-3);
+  margin-bottom: var(--ul-space-3);
+}
+.modal-head h3 { margin: 0; font-size: var(--ul-text-lg); }
+.modal-card .field { margin-bottom: var(--ul-space-3); }
+.modal-actions { display: flex; gap: var(--ul-space-2); justify-content: flex-end; }
+.modal-note { font-size: var(--ul-text-xs); margin: 0 0 var(--ul-space-3); }
+
+/* ---- read-only file view ------------------------------------------------- */
+
+.readonly-flag {
+  font-size: var(--ul-text-xs);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius-pill);
+  padding: 0.05em 0.6em;
+  color: var(--ul-muted);
+  flex: none;
+}
+
 /* ---- responsive ---------------------------------------------------------- */
 
 @media (max-width: 760px) {
+  /* The header is one row: a short tab strip that scrolls sideways, with the
+   * brand and the user controls above it. */
+  .site-head .wrap { min-height: 0; gap: var(--ul-space-2); flex-wrap: wrap; }
+  .app-head { padding-top: var(--ul-space-2); padding-bottom: 0; }
+  .site-head nav.app-tabs {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+    gap: 0;
+    border-top: 1px solid var(--ul-line);
+  }
+  .tab { min-height: 38px; padding: var(--ul-space-2); }
+  .app-user { gap: var(--ul-space-2); }
+  .capture-btn kbd, .user-role { display: none; }
+
   .split { flex-direction: column; }
+  /* 34% of a 844px phone is a third of the screen spent on a file list. The
+   * list gets what it needs up to a cap, and the pane keeps the rest. */
   .side {
     width: 100%;
-    max-height: 34%;
+    flex: none;
+    max-height: 12rem;
     border-right: 0;
     border-bottom: 1px solid var(--ul-line);
   }
-  .app-tabs { margin-left: 0; overflow-x: auto; }
+  .msg-scroll, .search-scroll { padding: var(--ul-space-3); }
+  .composer, .search-bar { padding: var(--ul-space-3); }
+  .preview-scroll { padding: var(--ul-space-4); }
+  .pane-empty { padding: var(--ul-space-4); }
 }

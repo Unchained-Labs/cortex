@@ -107,6 +107,78 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
     def current_time() -> str:
         return datetime.now().astimezone().isoformat(timespec="seconds")
 
+    def _writable_vault() -> str:
+        """Where this caller's writes land: their own vault in the
+        dashboard, the shared vault for the box owner at the CLI."""
+        user = scope.current_user.get()
+        if user and (brain.config.vaults_dir / user).is_dir():
+            return user
+        return "shared"
+
+    def capture_note(text: str, vault: str = "") -> str:
+        from cortex.capture import append_note
+        from cortex.vaults import VaultError
+
+        target = vault or _writable_vault()
+        if not scope.allows_path(f"vaults/{target}/"):
+            return f"You cannot write to the {target} vault."
+        who = scope.current_user.get()
+        try:
+            rel, line, _ = append_note(
+                brain.config, target, text, source=f"via cortex{f' for {who}' if who else ''}"
+            )
+        except VaultError as exc:
+            return f"Could not capture that: {exc}"
+        brain.request_reindex()
+        return f"Captured in vaults/{target}/{rel}:\n{line}"
+
+    def complete_task(path: str, line: int) -> str:
+        """Tick one markdown checkbox, addressed exactly as the digest and
+        search report it, so the model cannot tick the wrong thing."""
+        if not scope.allows_path(path):
+            return _MISSING_FILE.format(path=path)
+        target = brain.config.resolve_key(path)
+        if target is None or not target.is_file():
+            return _MISSING_FILE.format(path=path)
+        lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        if not 1 <= line <= len(lines):
+            return f"{path} has {len(lines)} lines; there is no line {line}."
+        original = lines[line - 1]
+        if "[ ]" not in original:
+            return f"Line {line} of {path} is not an open task: {original.strip()!r}"
+        lines[line - 1] = original.replace("[ ]", "[x]", 1)
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        brain.request_reindex()
+        return f"Done: {lines[line - 1].strip()}  ({path}:{line})"
+
+    def clip_url(url: str, vault: str = "") -> str:
+        from cortex import clip as clipper
+        from cortex.vaults import VaultError
+
+        target = vault or _writable_vault()
+        if not scope.allows_path(f"vaults/{target}/"):
+            return f"You cannot write to the {target} vault."
+        try:
+            clip = clipper.fetch(url)
+            rel = clipper.save(brain.config, target, clip)
+        except VaultError as exc:
+            return f"Could not clip that: {exc}"
+        brain.request_reindex()
+        words = len(clip.text.split())
+        return f"Saved {clip.title!r} ({words} words) to vaults/{target}/{rel}"
+
+    def daily_digest() -> str:
+        from cortex.digest import build_digest, format_digest
+
+        return format_digest(
+            build_digest(
+                brain.config,
+                brain.store,
+                prefixes=scope.current_prefixes.get(),
+                vault=_writable_vault(),
+            )
+        )
+
     registry.register(
         ToolPlugin(
             name="search_brain",
@@ -187,6 +259,65 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             name="current_time",
             description="The current local date and time.",
             func=current_time,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="capture_note",
+            description=(
+                "Write a line into today's daily note. Use this whenever the user asks "
+                "you to note, add, jot, remember-in-writing, or add to a list — it is "
+                "the only way you can put something into a vault."
+            ),
+            parameters={
+                "text": {"type": "string", "description": "One line to record."},
+                "vault": {
+                    "type": "string",
+                    "description": "Vault name; defaults to the caller's own.",
+                },
+            },
+            required=("text",),
+            func=capture_note,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="complete_task",
+            description=(
+                "Tick an open markdown task, using the exact path and line number that "
+                "search or the digest reported for it."
+            ),
+            parameters={
+                "path": {"type": "string", "description": "Index key, e.g. vaults/shared/x.md"},
+                "line": {"type": "integer", "description": "1-based line of the task."},
+            },
+            required=("path", "line"),
+            func=complete_task,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="clip_url",
+            description=(
+                "Fetch a web page and save its readable text into the brain, so it can "
+                "be searched later. Use when the user shares a link to keep."
+            ),
+            parameters={
+                "url": {"type": "string", "description": "The http(s) URL to save."},
+                "vault": {"type": "string", "description": "Vault; defaults to caller's."},
+            },
+            required=("url",),
+            func=clip_url,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="daily_digest",
+            description=(
+                "What is on today: upcoming events, open tasks, and what changed "
+                "recently. Use for 'what's on', 'what should I do', 'catch me up'."
+            ),
+            func=daily_digest,
         )
     )
 

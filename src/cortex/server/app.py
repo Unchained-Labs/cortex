@@ -10,7 +10,9 @@ import asyncio
 import contextlib
 import json
 import re
+import sys
 import time
+from datetime import date
 from importlib import resources
 from pathlib import Path
 
@@ -28,13 +30,16 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from cortex import auth, extensions, scope, vaults
+from cortex import auth, capture, extensions, scope, vaults
+from cortex import demo as demomod
+from cortex import digest as digestmod
 from cortex.brain import Brain
 from cortex.events import AgentEvent
 from cortex.memory.search import hybrid_search
 
 _ASSET_TYPES = {".css": "text/css", ".svg": "image/svg+xml"}
 _MENTION = re.compile(r"@cortex\b", re.IGNORECASE)
+_ANY_MENTION = re.compile(r"@([a-z0-9][a-z0-9_-]{1,31})", re.IGNORECASE)
 CHANNEL_SCOPE = ("vaults/shared/", "sources/")  # the agent never reads personal vaults in public
 
 
@@ -95,6 +100,24 @@ class SettingsBody(BaseModel):
     settings: dict
 
 
+class CaptureBody(BaseModel):
+    text: str
+    vault: str = ""
+
+
+class PasswordChange(BaseModel):
+    current_password: str = ""
+    new_password: str
+
+
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+class MentionsRead(BaseModel):
+    channel_id: int | None = None
+
+
 # -- websocket fan-out ------------------------------------------------------
 
 
@@ -110,8 +133,18 @@ class WsManager:
         self._clients.pop(ws, None)
 
     async def broadcast(self, event: dict) -> None:
+        await self._send(event, to=None)
+
+    async def send_to(self, username: str, event: dict) -> None:
+        """One user's sockets only — used for anything naming a personal
+        vault, which nobody else is allowed to know exists."""
+        await self._send(event, to=username)
+
+    async def _send(self, event: dict, to: str | None) -> None:
         payload = json.dumps(event, ensure_ascii=False)
-        for ws in list(self._clients):
+        for ws, owner in list(self._clients.items()):
+            if to is not None and owner != to:
+                continue
             try:
                 await ws.send_text(payload)
             except Exception:  # noqa: BLE001 - a dead socket is dropped, not fatal
@@ -125,8 +158,12 @@ def build_app(brain: Brain) -> FastAPI:
     secret = auth.load_secret(brain.config.state_dir)
     ws_manager = WsManager()
     reindex_wanted = asyncio.Event()
-    state: dict = {"runtime": None}
+    state: dict = {"runtime": None, "indexing": False, "model_error": ""}
     agent_lock = asyncio.Lock()  # one agent turn at a time keeps SQLite happy
+
+    # tools that write (capture_note, complete_task) ask the brain to
+    # re-index; here that means nudging the debounced worker below
+    brain._reindex_hook = reindex_wanted.set
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -135,10 +172,12 @@ def build_app(brain: Brain) -> FastAPI:
         await runtime.__aenter__()
         state["runtime"] = runtime
         worker = asyncio.create_task(_reindex_worker())
+        schedule = asyncio.create_task(_connector_worker())
         try:
             yield
         finally:
             worker.cancel()
+            schedule.cancel()
             await runtime.__aexit__(None, None, None)
             brain.close()
 
@@ -154,12 +193,54 @@ def build_app(brain: Brain) -> FastAPI:
             await asyncio.sleep(2.0)
             reindex_wanted.clear()
             embedder = brain.embedder()
+            state["indexing"] = True
             try:
                 await run_index(brain.config, brain.store, embedder)
             except ProviderError:
                 await run_index(brain.config, brain.store, None)
             except Exception:  # noqa: BLE001 - indexing must not kill the app
                 pass
+            finally:
+                state["indexing"] = False
+                await ws_manager.broadcast(
+                    {"type": "index_done", "stats": brain.store.stats()}
+                )
+
+    async def _connector_worker() -> None:
+        """Run connectors that ask for a schedule.
+
+        A source that only refreshes when someone remembers to run a command
+        is a stale source. Opt in per connector with an `interval_minutes`
+        setting (editable in the Extend panel); connectors without one stay
+        manual.
+        """
+        from cortex.connectors import run_connectors
+
+        last: dict[str, float] = {}
+        await asyncio.sleep(5)  # let startup settle before doing any work
+        while True:
+            try:
+                settings = extensions.effective_connectors(brain.config, brain.store)
+                now = time.monotonic()
+                due = []
+                for name, conf in settings.items():
+                    minutes = conf.get("interval_minutes")
+                    if not isinstance(minutes, (int, float)) or minutes <= 0:
+                        continue
+                    if now - last.get(name, 0.0) >= minutes * 60:
+                        due.append(name)
+                for name in due:
+                    last[name] = now
+                    results = await asyncio.to_thread(
+                        run_connectors, brain.config, settings, name
+                    )
+                    outcome = results.get(name, "no result")
+                    if outcome != "ok":
+                        print(f"connector {name}: {outcome}", file=sys.stderr)
+                    reindex_wanted.set()
+            except Exception as exc:  # noqa: BLE001 - a bad cycle must not end the loop
+                print(f"connector schedule error: {exc}", file=sys.stderr)
+            await asyncio.sleep(30)
 
     # -- auth -------------------------------------------------------------
 
@@ -203,6 +284,31 @@ def build_app(brain: Brain) -> FastAPI:
     def me(user: dict = Depends(current_user)) -> dict:
         return user
 
+    @app.post("/api/me/password")
+    def change_password(
+        body: PasswordChange, response: Response, user: dict = Depends(current_user)
+    ) -> dict:
+        """Anyone can change their own password, knowing the current one."""
+        row = brain.store.get_user(user["username"])
+        if row is None or not auth.verify_password(
+            body.current_password, row["pw_hash"], row["salt"]
+        ):
+            raise HTTPException(status_code=403, detail="current password is wrong")
+        if len(body.new_password) < 8:
+            raise HTTPException(status_code=422, detail="password must be 8+ characters")
+        pw_hash, salt = auth.hash_password(body.new_password)
+        brain.store.set_password(user["username"], pw_hash, salt)
+        # Re-mint: the old cookie stays valid otherwise, which is not what
+        # "I changed my password" is supposed to mean.
+        response.set_cookie(
+            auth.SESSION_COOKIE,
+            auth.mint_session(secret, user["username"]),
+            httponly=True,
+            samesite="lax",
+            max_age=auth.SESSION_DAYS * 86400,
+        )
+        return {"ok": True}
+
     # -- info / search ----------------------------------------------------
 
     @app.get("/health")
@@ -213,13 +319,41 @@ def build_app(brain: Brain) -> FastAPI:
     def info(user: dict = Depends(current_user)) -> dict:
         chat_profile = brain.config.provider_for("chat")
         embed_profile = brain.config.provider_for("embed")
+        stats = brain.store.stats()
         return {
             "brain": brain.config.name,
-            "stats": brain.store.stats(),
+            "stats": stats,
             "chat_model": chat_profile.chat_model if chat_profile else "",
             "embed_model": embed_profile.embed_model if embed_profile else "",
+            "chat_endpoint": chat_profile.base_url if chat_profile else "",
             "tools": [p.name for p in brain.registry.plugins()],
+            # Health the UI can act on rather than leaving the user to guess:
+            # an unindexed brain answers nothing, and looks identical to an
+            # empty one unless we say so.
+            "indexed": stats["files"] > 0,
+            "demo_installed": demomod.installed(brain.config),
+            "indexing": state["indexing"],
+            "model_error": state["model_error"],
         }
+
+    @app.post("/api/demo")
+    async def install_demo(user: dict = Depends(admin_user)) -> dict:
+        """Seed example notes from the empty state, so a new brain has
+        something to search before anyone has written anything."""
+        written = await asyncio.to_thread(demomod.install, brain.config, "shared")
+        reindex_wanted.set()
+        return {"written": written, "count": len(written)}
+
+    @app.delete("/api/demo")
+    async def remove_demo(user: dict = Depends(admin_user)) -> dict:
+        count = await asyncio.to_thread(demomod.remove, brain.config, "shared")
+        reindex_wanted.set()
+        return {"removed": count}
+
+    @app.post("/api/reindex")
+    async def reindex(user: dict = Depends(admin_user)) -> dict:
+        reindex_wanted.set()
+        return {"ok": True, "indexing": True}
 
     @app.get("/api/search")
     def search(q: str, user: dict = Depends(current_user)) -> dict:
@@ -242,6 +376,26 @@ def build_app(brain: Brain) -> FastAPI:
                 for h in result.hits
             ],
         }
+
+    @app.get("/api/digest")
+    def digest(user: dict = Depends(current_user)) -> dict:
+        """Today, computed without the model so it always answers."""
+        built = digestmod.build_digest(
+            brain.config, brain.store, prefixes=user_scope(user), vault=user["username"]
+        )
+        return built.as_dict()
+
+    @app.post("/api/capture")
+    async def capture_note(body: CaptureBody, user: dict = Depends(current_user)) -> dict:
+        target = body.vault or user["username"]
+        _check_vault_access(user, target)
+        _ensure_personal_vault(user)
+        try:
+            rel, text, lineno = capture.append_note(brain.config, target, body.text)
+        except vaults.VaultError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _after_write(target, rel)
+        return {"vault": target, "path": rel, "line": lineno, "text": text}
 
     # -- agent chat -------------------------------------------------------
 
@@ -289,7 +443,11 @@ def build_app(brain: Brain) -> FastAPI:
                             answer = await state["runtime"].run(thread, body.message, sink)
                     brain.record_turn(thread, user["username"], body.message, answer)
                 except Exception as exc:  # noqa: BLE001 - stream the failure, not a 500
-                    await queue.put(AgentEvent("error", {"text": str(exc)}))
+                    text = _explain_model_failure(exc, brain)
+                    state["model_error"] = text
+                    await queue.put(AgentEvent("error", {"text": text}))
+                else:
+                    state["model_error"] = ""
                 finally:
                     await queue.put(None)
 
@@ -357,7 +515,13 @@ def build_app(brain: Brain) -> FastAPI:
 
     async def _after_write(vault: str, path: str) -> None:
         reindex_wanted.set()
-        await ws_manager.broadcast({"type": "vault_changed", "vault": vault, "path": path})
+        event = {"type": "vault_changed", "vault": vault, "path": path}
+        if vault == "shared":
+            await ws_manager.broadcast(event)
+        else:
+            # A personal vault's filenames are as private as its contents:
+            # "erwin edited therapy.md" must not reach the whole household.
+            await ws_manager.send_to(vault, event)
 
     @app.put("/api/vault/file")
     async def vault_write(body: FileWrite, user: dict = Depends(current_user)) -> dict:
@@ -442,6 +606,27 @@ def build_app(brain: Brain) -> FastAPI:
         reindex_wanted.set()
         return {"imported": report.imported, "skipped": report.skipped}
 
+    @app.get("/api/file")
+    def read_indexed_file(path: str, user: dict = Depends(current_user)) -> dict:
+        """Read any file the caller may see by its index key.
+
+        The vault endpoints only address `vaults/<name>/…`; connector output
+        under `sources/…` is readable but was unopenable, so a calendar event
+        in the digest linked nowhere.
+        """
+        prefixes = user_scope(user)
+        if not any(path.startswith(p) for p in prefixes):
+            raise HTTPException(status_code=404, detail="no such file")
+        target = brain.config.resolve_key(path)
+        if target is None or not target.is_file():
+            raise HTTPException(status_code=404, detail="no such file")
+        return {
+            "path": path,
+            "text": target.read_text(encoding="utf-8", errors="replace"),
+            "mtime": target.stat().st_mtime,
+            "editable": path.startswith("vaults/"),
+        }
+
     # -- channels ---------------------------------------------------------
 
     @app.get("/api/channels")
@@ -488,16 +673,61 @@ def build_app(brain: Brain) -> FastAPI:
         if not brain.store.channel_exists(channel_id):
             raise HTTPException(status_code=404, detail="no such channel")
         message_id, at = brain.store.add_channel_message(channel_id, user["username"], text)
+        mentioned = _record_mentions(message_id, channel_id, text, user["username"])
         await ws_manager.broadcast(
             {
                 "type": "channel_message",
                 "channel_id": channel_id,
-                "message": {"id": message_id, "author": user["username"], "body": text, "at": at},
+                "message": {
+                    "id": message_id,
+                    "author": user["username"],
+                    "body": text,
+                    "at": at,
+                    "mentions": mentioned,
+                },
             }
         )
         if _MENTION.search(text):
             asyncio.create_task(_agent_channel_reply(channel_id, user["username"], text))
         return {"id": message_id, "at": at}
+
+    def _record_mentions(
+        message_id: int, channel_id: int, text: str, author: str
+    ) -> list[str]:
+        """Record @name for real users other than the author."""
+        found: list[str] = []
+        for raw in {m.lower() for m in _ANY_MENTION.findall(text)}:
+            if raw == author or raw == "cortex":
+                continue
+            if brain.store.get_user(raw) is None:
+                continue
+            brain.store.add_mention(message_id, channel_id, raw, author)
+            found.append(raw)
+        return sorted(found)
+
+    @app.get("/api/mentions")
+    def mentions(user: dict = Depends(current_user)) -> dict:
+        rows = brain.store.unread_mentions(user["username"])
+        return {
+            "mentions": [
+                {
+                    "channel_id": r["channel_id"],
+                    "channel": r["channel"],
+                    "message_id": r["message_id"],
+                    "author": r["author"],
+                    "body": r["body"] or "",
+                    "at": r["created_at"],
+                }
+                for r in rows
+            ]
+        }
+
+    @app.post("/api/mentions/read")
+    def mentions_read(
+        body: MentionsRead, user: dict = Depends(current_user)
+    ) -> dict:
+        cleared = brain.store.mark_mentions_read(user["username"], body.channel_id)
+        return {"cleared": cleared}
 
     async def _agent_channel_reply(channel_id: int, author: str, text: str) -> None:
         """The agent answers in-channel with shared-only scope; its partial
@@ -520,8 +750,14 @@ def build_app(brain: Brain) -> FastAPI:
         try:
             async with agent_lock:
                 with scope.scoped(CHANNEL_SCOPE, "cortex"):
+                    # Rotate the channel's agent thread weekly: one
+                    # ever-growing checkpointer thread would eventually
+                    # exceed the model's context window.
+                    week = date.today().strftime("%G-W%V")
                     answer = await state["runtime"].run(
-                        f"channel-{channel_id}", f"[{author} in channel] {text}", sink
+                        f"channel-{channel_id}-{week}",
+                        f"[{author} in channel] {text}",
+                        sink,
                     )
         except Exception as exc:  # noqa: BLE001 - a failed reply becomes a visible message
             answer = f"(cortex could not answer: {exc})"
@@ -688,13 +924,33 @@ def build_app(brain: Brain) -> FastAPI:
         (brain.config.vaults_dir / username).mkdir(parents=True, exist_ok=True)
         return {"username": username, "role": body.role}
 
+    @app.post("/api/admin/users/{username}/password")
+    def user_reset_password(
+        username: str, body: PasswordReset, user: dict = Depends(admin_user)
+    ) -> dict:
+        if brain.store.get_user(username) is None:
+            raise HTTPException(status_code=404, detail="no such user")
+        if len(body.new_password) < 8:
+            raise HTTPException(status_code=422, detail="password must be 8+ characters")
+        pw_hash, salt = auth.hash_password(body.new_password)
+        brain.store.set_password(username, pw_hash, salt)
+        return {"ok": True}
+
     @app.delete("/api/admin/users/{username}")
     def user_delete(username: str, user: dict = Depends(admin_user)) -> dict:
         if username == user["username"]:
             raise HTTPException(status_code=422, detail="cannot delete yourself")
-        if not brain.store.delete_user(username):
+        if brain.store.get_user(username) is None:
             raise HTTPException(status_code=404, detail="no such user")
-        return {"ok": True}
+        brain.store.delete_user(username)
+        # Their vault is deliberately left on disk: deleting an account
+        # should not delete someone's writing. Say so, so an admin is not
+        # surprised later by a recreated user inheriting old notes.
+        vault = brain.config.vaults_dir / username
+        return {
+            "ok": True,
+            "vault_kept": str(vault) if vault.is_dir() else "",
+        }
 
     # -- websocket --------------------------------------------------------
 
@@ -756,6 +1012,30 @@ def _webdist_dir() -> Path | None:
     except Exception:  # noqa: BLE001
         return None
     return path if path.is_dir() else None
+
+
+def _explain_model_failure(exc: Exception, brain: Brain) -> str:
+    """Turn a transport error into something a self-hoster can act on.
+
+    "Connection error." is the least useful sentence we could show: the one
+    thing the reader needs is which endpoint failed, and that we know.
+    """
+    raw = str(exc).strip() or exc.__class__.__name__
+    profile = brain.config.provider_for("chat")
+    url = profile.base_url if profile else ""
+    lowered = raw.lower()
+    transport = any(
+        s in lowered
+        for s in ("connection", "connect", "timeout", "refused", "unreachable", "name or service")
+    )
+    if transport and url:
+        return (
+            f"Cannot reach the chat model at {url} — {raw}. "
+            "Check that the server is running and that base_url in cortex.yaml is right."
+        )
+    if "api key" in lowered or "401" in lowered or "unauthorized" in lowered:
+        return f"The model endpoint rejected our credentials: {raw}"
+    return raw
 
 
 def _frame(event: AgentEvent) -> str:

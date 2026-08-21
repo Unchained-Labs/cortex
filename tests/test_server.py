@@ -238,3 +238,163 @@ def test_scaffold_endpoint(client):
     assert "register" in client.get(
         "/api/extensions/scaffold", params={"kind": "plugin"}
     ).json()["code"]
+
+
+def test_capture_endpoint_writes_to_your_own_vault(client, brain):
+    signin(client, "sam")
+    res = client.post("/api/capture", json={"text": "call the plumber"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["vault"] == "sam" and body["path"].startswith("journal/")
+    note = (brain.config.vaults_dir / "sam" / body["path"]).read_text()
+    assert "call the plumber" in note
+
+
+def test_capture_refuses_someone_elses_vault(client):
+    signin(client, "sam")
+    res = client.post("/api/capture", json={"text": "x", "vault": "erwin"})
+    assert res.status_code == 404
+    assert client.post("/api/capture", json={"text": "   "}).status_code == 422
+
+
+def test_digest_endpoint_is_scoped(client, brain):
+    (brain.config.vaults_dir / "erwin").mkdir(parents=True, exist_ok=True)
+    (brain.config.shared_vault / "s.md").write_text("- [ ] shared task\n", encoding="utf-8")
+    (brain.config.vaults_dir / "erwin" / "p.md").write_text(
+        "- [ ] erwin secret task\n", encoding="utf-8"
+    )
+    signin(client, "sam")
+    tasks = client.get("/api/digest").json()["tasks"]
+    assert [t["text"] for t in tasks] == ["shared task"]
+    client.post("/api/auth/logout")
+    signin(client, "erwin")
+    tasks = client.get("/api/digest").json()["tasks"]
+    assert {t["text"] for t in tasks} == {"shared task", "erwin secret task"}
+
+
+def test_password_change_and_admin_reset(client, brain):
+    signin(client, "sam")
+    assert client.post(
+        "/api/me/password", json={"current_password": "wrong", "new_password": "newpassword"}
+    ).status_code == 403
+    assert client.post(
+        "/api/me/password",
+        json={"current_password": "hunter2hunter2", "new_password": "short"},
+    ).status_code == 422
+    ok = client.post(
+        "/api/me/password",
+        json={"current_password": "hunter2hunter2", "new_password": "a-longer-password"},
+    )
+    assert ok.status_code == 200
+    client.post("/api/auth/logout")
+    signin(client, "sam", "a-longer-password")  # the new one works
+
+    client.post("/api/auth/logout")
+    signin(client, "erwin")
+    reset = client.post("/api/admin/users/sam/password", json={"new_password": "reset-by-admin"})
+    assert reset.status_code == 200
+    client.post("/api/auth/logout")
+    signin(client, "sam", "reset-by-admin")
+
+
+def test_member_cannot_reset_anyone_elses_password(client):
+    signin(client, "sam")
+    assert client.post(
+        "/api/admin/users/erwin/password", json={"new_password": "hijacked-pw"}
+    ).status_code == 403
+
+
+def test_deleting_a_user_keeps_their_vault_and_says_so(client, brain):
+    (brain.config.vaults_dir / "sam").mkdir(parents=True, exist_ok=True)
+    (brain.config.vaults_dir / "sam" / "diary.md").write_text("private", encoding="utf-8")
+    signin(client, "erwin")
+    body = client.delete("/api/admin/users/sam").json()
+    assert body["ok"] is True
+    assert body["vault_kept"].endswith("/vaults/sam")
+    assert (brain.config.vaults_dir / "sam" / "diary.md").read_text() == "private"
+
+
+def test_info_reports_index_and_model_health(client, brain):
+    signin(client, "erwin")
+    info = client.get("/api/info").json()
+    assert info["indexed"] is False  # nothing indexed in the fixture brain
+    assert info["indexing"] is False
+    assert info["model_error"] == ""
+    assert "chat_endpoint" in info
+    assert client.post("/api/reindex").json()["ok"] is True
+
+
+def test_reindex_is_admin_only(client):
+    signin(client, "sam")
+    assert client.post("/api/reindex").status_code == 403
+
+
+def test_capture_returns_a_line_number(client, brain):
+    signin(client, "sam")
+    body = client.post("/api/capture", json={"text": "milk"}).json()
+    assert isinstance(body["line"], int) and body["line"] > 0
+    note = (brain.config.vaults_dir / "sam" / body["path"]).read_text().splitlines()
+    assert note[body["line"] - 1] == body["text"]
+
+
+def test_read_any_readable_indexed_file(client, brain):
+    src = brain.config.sources_dir / "calendar_ics"
+    src.mkdir(parents=True, exist_ok=True)
+    (src / "e.md").write_text("# Standup\n", encoding="utf-8")
+    signin(client, "sam")
+    got = client.get("/api/file", params={"path": "sources/calendar_ics/e.md"})
+    assert got.status_code == 200
+    assert got.json()["text"] == "# Standup\n"
+    assert got.json()["editable"] is False
+
+    # someone else's vault stays invisible through this route too
+    (brain.config.vaults_dir / "erwin").mkdir(parents=True, exist_ok=True)
+    (brain.config.vaults_dir / "erwin" / "d.md").write_text("secret", encoding="utf-8")
+    assert client.get(
+        "/api/file", params={"path": "vaults/erwin/d.md"}
+    ).status_code == 404
+    assert client.get("/api/file", params={"path": "../../etc/passwd"}).status_code == 404
+
+
+def test_mentions_are_recorded_only_for_real_other_users(client, brain):
+    signin(client, "erwin")
+    cid = client.get("/api/channels").json()["channels"][0]["id"]
+    posted = client.post(
+        f"/api/channels/{cid}/messages",
+        json={"body": "@sam can you look at this? cc @nobody and @erwin and @cortex"},
+    )
+    assert posted.status_code == 200
+    client.post("/api/auth/logout")
+
+    signin(client, "sam")
+    mentions = client.get("/api/mentions").json()["mentions"]
+    assert len(mentions) == 1
+    assert mentions[0]["author"] == "erwin" and mentions[0]["channel"] == "general"
+    assert "look at this" in mentions[0]["body"]
+
+    # reading the channel clears them; ambient chatter never created any
+    assert client.post("/api/mentions/read", json={"channel_id": cid}).json()["cleared"] == 1
+    assert client.get("/api/mentions").json()["mentions"] == []
+
+
+def test_plain_channel_chatter_mentions_nobody(client):
+    signin(client, "erwin")
+    cid = client.get("/api/channels").json()["channels"][0]["id"]
+    client.post(f"/api/channels/{cid}/messages", json={"body": "the bins go out tonight"})
+    client.post("/api/auth/logout")
+    signin(client, "sam")
+    assert client.get("/api/mentions").json()["mentions"] == []
+
+
+def test_demo_content_endpoint(client, brain):
+    signin(client, "erwin")
+    assert client.get("/api/info").json()["demo_installed"] is False
+    body = client.post("/api/demo").json()
+    assert body["count"] == 5
+    assert client.get("/api/info").json()["demo_installed"] is True
+    assert client.delete("/api/demo").json()["removed"] == 5
+
+
+def test_demo_is_admin_only(client):
+    signin(client, "sam")
+    assert client.post("/api/demo").status_code == 403

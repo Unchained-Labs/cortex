@@ -102,12 +102,15 @@ export default function ImportView() {
           <form className="card" onSubmit={uploadZip}>
             <h3>Zip upload</h3>
             <p>Upload a .zip of markdown + attachments. Entries outside the vault root are skipped.</p>
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".zip,application/zip"
-              onChange={(e) => setZip(e.target.files?.[0] ?? null)}
-            />
+            <label className="field">
+              <span>Zip file</span>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(e) => setZip(e.target.files?.[0] ?? null)}
+              />
+            </label>
             <button className="btn primary" type="submit" disabled={!zip || !vault || busy !== null}>
               {busy === "zip" ? "Uploading…" : "Upload"}
             </button>
@@ -116,12 +119,15 @@ export default function ImportView() {
           <form className="card" onSubmit={importGit}>
             <h3>Git repository</h3>
             <p>The server clones the repository and imports its markdown.</p>
-            <input
-              type="url"
-              placeholder="https://github.com/you/notes.git"
-              value={gitUrl}
-              onChange={(e) => setGitUrl(e.target.value)}
-            />
+            <label className="field">
+              <span>Repository URL</span>
+              <input
+                type="url"
+                placeholder="https://github.com/you/notes.git"
+                value={gitUrl}
+                onChange={(e) => setGitUrl(e.target.value)}
+              />
+            </label>
             <button
               className="btn primary"
               type="submit"
@@ -134,11 +140,14 @@ export default function ImportView() {
           <form className="card" onSubmit={importPath}>
             <h3>Server path</h3>
             <p>Import from a directory that already exists on the server box.</p>
-            <input
-              placeholder="/home/you/obsidian-vault"
-              value={srcPath}
-              onChange={(e) => setSrcPath(e.target.value)}
-            />
+            <label className="field">
+              <span>Directory on the server</span>
+              <input
+                placeholder="/home/you/obsidian-vault"
+                value={srcPath}
+                onChange={(e) => setSrcPath(e.target.value)}
+              />
+            </label>
             <button
               className="btn primary"
               type="submit"

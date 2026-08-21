@@ -67,10 +67,15 @@ export default function Channels({ username, active }: Props) {
       wsSubscribe((ev) => {
         if (ev.type === "channel_message") {
           if (ev.channel_id === currentRef.current) {
+            // The final message carries a different id from the partial it
+            // supersedes; `replaces` is what ties the two together. Matching
+            // on `id` never fired, so the placeholder and its spinning dot
+            // stayed next to the finished reply forever.
+            const retire = ev.message.replaces ?? ev.message.id;
             setPartials((p) => {
-              if (!(ev.message.id in p)) return p;
+              if (!(retire in p)) return p;
               const next = { ...p };
-              delete next[ev.message.id];
+              delete next[retire];
               return next;
             });
             setMessages((m) =>
@@ -165,6 +170,7 @@ export default function Channels({ username, active }: Props) {
           <form className="side-form" onSubmit={createChannel}>
             <input
               autoFocus
+              aria-label="New channel name"
               placeholder="channel-name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
@@ -187,7 +193,7 @@ export default function Channels({ username, active }: Props) {
       </aside>
 
       <section className="pane">
-        <div className="msg-scroll" ref={scroller}>
+        <div className="msg-scroll" ref={scroller} role="log" aria-live="polite">
           {hasOlder && (
             <button className="btn btn-sm load-older" onClick={() => void loadOlder()}>
               Load older
@@ -224,6 +230,7 @@ export default function Channels({ username, active }: Props) {
         <div className="composer">
           <textarea
             rows={2}
+            aria-label="Message the channel"
             placeholder={
               current
                 ? "Message the channel — mention @cortex for the agent"

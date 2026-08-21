@@ -104,6 +104,13 @@ CREATE TABLE IF NOT EXISTS channel_messages(
     author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS channel_messages_chan ON channel_messages(channel_id, id);
+CREATE TABLE IF NOT EXISTS mentions(
+    id INTEGER PRIMARY KEY,
+    message_id INTEGER NOT NULL, channel_id INTEGER NOT NULL,
+    username TEXT NOT NULL, author TEXT NOT NULL,
+    created_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS mentions_user ON mentions(username, read);
 CREATE TABLE IF NOT EXISTS ext_disabled(
     kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (kind, name)
 );
@@ -216,6 +223,23 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM chunks WHERE path=?", (path,))
             self.db.execute("DELETE FROM files WHERE path=?", (path,))
+
+    def recent_files(
+        self, prefixes: tuple[str, ...] | None, since: float, limit: int = 8
+    ) -> list[sqlite3.Row]:
+        """Indexed files touched since a timestamp, newest first."""
+        if prefixes is None:
+            clause, params = "", []
+        elif not prefixes:
+            return []
+        else:
+            clause = " AND (" + " OR ".join("path GLOB ?" for _ in prefixes) + ")"
+            params = [f"{p}*" for p in prefixes]
+        return self.db.execute(
+            f"SELECT path, mtime FROM files WHERE mtime >= ?{clause} "
+            "ORDER BY mtime DESC LIMIT ?",
+            (since, *params, limit),
+        ).fetchall()
 
     def stats(self) -> dict[str, int]:
         files = self.db.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"]
@@ -330,6 +354,13 @@ class Store:
             (username,),
         ).fetchone()
 
+    def set_password(self, username: str, pw_hash: str, salt: str) -> None:
+        with self.db:
+            self.db.execute(
+                "UPDATE users SET pw_hash=?, salt=? WHERE username=?",
+                (pw_hash, salt, username),
+            )
+
     def list_users(self) -> list[sqlite3.Row]:
         return self.db.execute(
             "SELECT username, role, created_at FROM users ORDER BY username"
@@ -405,6 +436,42 @@ class Store:
                 (channel_id, author, body, at),
             )
         return cur.lastrowid or 0, at
+
+    # -- mentions ---------------------------------------------------------
+    # A channel message everyone can see is ambient; one that names you is
+    # addressed to you. Only the second kind should ever chase a person.
+    def add_mention(
+        self, message_id: int, channel_id: int, username: str, author: str
+    ) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO mentions(message_id, channel_id, username, author, created_at) "
+                "VALUES(?,?,?,?,?)",
+                (message_id, channel_id, username, author, _now()),
+            )
+
+    def unread_mentions(self, username: str) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT m.id, m.channel_id, m.message_id, m.author, m.created_at, "
+            "c.name AS channel, cm.body "
+            "FROM mentions m JOIN channels c ON c.id = m.channel_id "
+            "LEFT JOIN channel_messages cm ON cm.id = m.message_id "
+            "WHERE m.username=? AND m.read=0 ORDER BY m.id DESC LIMIT 50",
+            (username,),
+        ).fetchall()
+
+    def mark_mentions_read(self, username: str, channel_id: int | None = None) -> int:
+        with self.db:
+            if channel_id is None:
+                cur = self.db.execute(
+                    "UPDATE mentions SET read=1 WHERE username=? AND read=0", (username,)
+                )
+            else:
+                cur = self.db.execute(
+                    "UPDATE mentions SET read=1 WHERE username=? AND channel_id=? AND read=0",
+                    (username, channel_id),
+                )
+        return cur.rowcount
 
     # -- extensions -------------------------------------------------------
     def is_disabled(self, kind: str, name: str) -> bool:

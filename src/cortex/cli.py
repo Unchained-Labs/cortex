@@ -1,10 +1,11 @@
-"""The cortex CLI: setup, init, index, chat, serve, mcp, connectors, ext, users, status."""
+"""The cortex CLI: setup, note, today, index, chat, serve, mcp, ext, users, status."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import getpass
+import os
 import sys
 from pathlib import Path
 
@@ -62,21 +63,44 @@ roles:
 """
 
 WELCOME_NOTE = """\
-# Welcome to your brain
+# Start here
 
-This folder is a cortex brain. The dashboard lives at `cortex serve`; the
-same content is reachable from the CLI (`cortex chat`) and from MCP clients
-(`cortex mcp`).
+This is your brain. Three things to know, then delete this note.
 
-- `vaults/shared/` — everyone's notes; an Obsidian vault import lands here
-- `vaults/<user>/` — each user's private vault
-- `sources/` — connector output, one folder per connector
-- `skills/` — agentskills.io SKILL.md procedure folders
-- `plugins/` — drop-in tool plugins (*.py exposing register(registry))
-- `connectors/` — drop-in ingestion connectors (*.py exposing sync(out_dir, settings))
+## 1. Capture without thinking about it
 
-Extensions are also managed from the dashboard's Extend panel (admin only)
-or with `cortex ext list|enable|disable|delete`.
+The fastest way in is one line, from anywhere:
+
+```sh
+cortex note "the boiler service is due in March"
+```
+
+It lands in `journal/` under today's date. In the dashboard, press **c**
+from any tab. Do not file it — search does not care which note a line is in.
+
+## 2. Ask, and check the citation
+
+Ask the agent in the Chat tab, or `cortex chat`. It searches before it
+answers and cites the file it used; click the citation to open it. If it
+says it found nothing, believe it — it is reading only what is here.
+
+## 3. Fill it with what you already have
+
+An empty brain cannot help you. Bring what you have already written:
+
+- **Import** tab: an existing Obsidian vault as a zip, a git URL, or a path
+- drop markdown into `vaults/shared/` (everyone) or your own vault (private)
+- connect a calendar: Extend → Connectors → calendar_ics
+
+## Today
+
+`cortex today` lists what is on: upcoming events, open tasks, what changed.
+Tasks are ordinary markdown checkboxes anywhere in your notes:
+
+- [ ] Import my existing notes
+- [ ] Ask the brain something and check the citation
+- [ ] Delete this note
+
 """
 
 KIND_PRESETS = {
@@ -106,12 +130,30 @@ def _scaffold(root: Path, config_text: str) -> None:
     for sub in ("vaults/shared", "sources", "skills", "plugins", "connectors", ".cortex"):
         (root / sub).mkdir(parents=True, exist_ok=True)
     (root / CONFIG_NAME).write_text(config_text, encoding="utf-8")
+    _install_bundled_skills(root)
     welcome = root / "vaults" / "shared" / "welcome.md"
     if not welcome.exists():
         welcome.write_text(WELCOME_NOTE, encoding="utf-8")
     gitignore = root / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(".cortex/\n", encoding="utf-8")
+
+
+def _install_bundled_skills(root: Path) -> None:
+    """Copy the example skills in, so a new brain has one to read and copy.
+
+    Nothing else in the product suggests a skill is a thing you would write;
+    the only surface is an admin-only panel.
+    """
+    import shutil
+
+    bundled = Path(__file__).resolve().parents[2] / "examples" / "skills"
+    if not bundled.is_dir():
+        return
+    for skill in bundled.iterdir():
+        target = root / "skills" / skill.name
+        if skill.is_dir() and not target.exists():
+            shutil.copytree(skill, target)
 
 
 def _render_config(
@@ -195,6 +237,23 @@ def cmd_setup(args: argparse.Namespace) -> None:
         if warning:
             print(f"warning: {warning}", file=sys.stderr)
 
+    # Seed from what they already have. An empty brain answers nothing, and
+    # someone with an existing vault can go from empty to useful in one
+    # prompt — the cheapest high-value moment in the whole product.
+    if interactive and not any(brain.config.shared_vault.rglob("*.md")):
+        source = _ask("Import an existing vault? (path or git URL, blank to skip)", "")
+        if source.strip():
+            from cortex import vaults as vaultmod
+
+            try:
+                if source.startswith(("http://", "https://", "git@")):
+                    imported = vaultmod.import_git(brain.config, "shared", source)
+                else:
+                    imported = vaultmod.import_path(brain.config, "shared", source)
+                print(f"imported {imported.imported} files ({imported.skipped} skipped)")
+            except vaultmod.VaultError as exc:
+                print(f"import failed: {exc}", file=sys.stderr)
+
     if brain.store.count_users() == 0:
         print("\nCreate the first (admin) dashboard account.")
         while True:
@@ -219,10 +278,34 @@ def cmd_setup(args: argparse.Namespace) -> None:
         (brain.config.vaults_dir / username).mkdir(parents=True, exist_ok=True)
         print(f"admin account {username!r} created")
 
+    # Index now rather than printing it as homework: an unindexed brain
+    # finds nothing, which looks like a broken product rather than an empty
+    # one.
+    print("\nIndexing…")
+    embedder = brain.embedder()
+    if embedder is not None:
+        from cortex.providers import ProviderError
+
+        try:
+            asyncio.run(embedder.embed(["reachability probe"]))
+        except ProviderError:
+            embedder = None
+    from cortex.memory.indexer import run_index
+
+    report = asyncio.run(run_index(brain.config, brain.store, embedder))
+    mode = "with embeddings" if embedder else "full-text only"
+    print(f"indexed {report.indexed} files — {mode}")
     brain.close()
+
     print(f"\nBrain ready at {root}")
-    print(f"  cortex index --brain {root}")
     print(f"  cortex serve --brain {root} --host 0.0.0.0   # dashboard on :8642")
+    if report.indexed <= 1:
+        print("\nNothing in it yet? Add example notes to try it out:")
+        print(f"  cortex demo --brain {root}")
+    print("\nThe two you will use every day:")
+    print('  cortex note "something you want to remember"')
+    print("  cortex today")
+    print("\nKeep it running across reboots:  cortex service install")
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -364,6 +447,109 @@ def cmd_connectors(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_note(args: argparse.Namespace) -> None:
+    """Capture a thought. The fastest path into the brain:
+
+        cortex note "the boiler service is due in March"
+        echo "..." | cortex note
+    """
+    from cortex.capture import append_note
+    from cortex.vaults import VaultError
+
+    text = " ".join(args.text).strip()
+    if not text:
+        if sys.stdin.isatty():
+            sys.exit('usage: cortex note "what you want to remember"')
+        text = sys.stdin.read().strip()
+    brain = _brain(args)
+    try:
+        rel, line, _ = append_note(brain.config, args.vault, text, source="via cli")
+    except VaultError as exc:
+        brain.close()
+        sys.exit(f"error: {exc}")
+    print(f"vaults/{args.vault}/{rel}")
+    print(line)
+    brain.close()
+
+
+def cmd_demo(args: argparse.Namespace) -> None:
+    """Add (or remove) example notes, for a brain that is still empty."""
+    from cortex import demo
+
+    brain = _brain(args)
+    if args.remove:
+        count = demo.remove(brain.config, args.vault)
+        print(f"removed {count} example notes")
+    else:
+        written = demo.install(brain.config, args.vault)
+        if not written:
+            print("examples are already installed")
+        else:
+            for rel in written:
+                print(f"vaults/{args.vault}/{rel}")
+            print(f"\n{len(written)} example notes added. Remove them with "
+                  "`cortex demo --remove`.")
+    print("run `cortex index` to make them searchable")
+    brain.close()
+
+
+def cmd_clip(args: argparse.Namespace) -> None:
+    """Save a web page into the brain as markdown."""
+    from cortex import clip as clipper
+    from cortex.vaults import VaultError
+
+    brain = _brain(args)
+    try:
+        clip = clipper.fetch(args.url)
+        rel = clipper.save(brain.config, args.vault, clip)
+    except VaultError as exc:
+        brain.close()
+        sys.exit(f"error: {exc}")
+    words = len(clip.text.split())
+    print(f"vaults/{args.vault}/{rel}")
+    print(f"{clip.title} — {words} words")
+    brain.close()
+
+
+def cmd_today(args: argparse.Namespace) -> None:
+    """What is on today, computed without asking a model."""
+    from cortex.digest import build_digest, format_digest
+
+    brain = _brain(args)
+    print(format_digest(build_digest(brain.config, brain.store, vault=args.vault)))
+    brain.close()
+
+
+def cmd_service(args: argparse.Namespace) -> None:
+    """Generate (and optionally install) a systemd user unit."""
+    from cortex import service
+
+    brain = _brain(args)
+    text = service.unit_text(
+        brain.config.root, args.host, args.port, brain.config.name,
+        env={"CORTEX_BRAIN": str(brain.config.root)},
+    )
+    brain.close()
+    if args.action == "print":
+        print(text, end="")
+        return
+    if not service.systemd_available():
+        print(
+            "systemd --user is not available here. The unit text follows; adapt it "
+            "for your init system, or just run `cortex serve` under whatever you use.\n",
+            file=sys.stderr,
+        )
+        print(text, end="")
+        return
+    path = service.install(text)
+    print(f"wrote {path}")
+    print("\nStart it, and have it come back after a reboot:")
+    print("  systemctl --user daemon-reload")
+    print("  systemctl --user enable --now cortex")
+    print("\nIf the brain should run without you being logged in:")
+    print(f"  sudo loginctl enable-linger {os.environ.get('USER', 'you')}")
+
+
 def cmd_ext(args: argparse.Namespace) -> None:
     """List, enable, disable, or delete extensions from the terminal.
 
@@ -428,11 +614,23 @@ def cmd_users(args: argparse.Namespace) -> None:
             print("no users — run `cortex setup`")
         for row in rows:
             print(f"{row['username']}  {row['role']}  {row['created_at']}")
+    elif args.action == "passwd":
+        if not args.name:
+            sys.exit("usage: cortex users passwd <name>")
+        if brain.store.get_user(args.name) is None:
+            sys.exit(f"no user named {args.name!r}")
+        password = getpass.getpass("New password (8+ chars): ")
+        if len(password) < 8:
+            sys.exit("error: password must be 8+ characters")
+        pw_hash, salt = auth.hash_password(password)
+        brain.store.set_password(args.name, pw_hash, salt)
+        print(f"password changed for {args.name}")
     elif args.action == "remove":
         if not args.name:
             sys.exit("usage: cortex users remove <name>")
         if brain.store.delete_user(args.name):
-            print(f"removed {args.name} (their vault directory is kept)")
+            print(f"removed {args.name}")
+            print(f"their vault is kept at {brain.config.vaults_dir / args.name}")
         else:
             sys.exit(f"no user named {args.name!r}")
     brain.close()
@@ -524,6 +722,36 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--brain")
     p.set_defaults(func=cmd_connectors)
 
+    p = sub.add_parser("service", help="run the dashboard as a systemd user service")
+    p.add_argument("action", choices=["print", "install"])
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8642)
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_service)
+
+    p = sub.add_parser("note", help="capture a line into today's daily note")
+    p.add_argument("text", nargs="*", help="the thought; omit to read stdin")
+    p.add_argument("--vault", default="shared")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_note)
+
+    p = sub.add_parser("demo", help="add example notes so an empty brain has something to find")
+    p.add_argument("--remove", action="store_true", help="delete the examples again")
+    p.add_argument("--vault", default="shared")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_demo)
+
+    p = sub.add_parser("clip", help="save a web page into the brain as markdown")
+    p.add_argument("url")
+    p.add_argument("--vault", default="shared")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_clip)
+
+    p = sub.add_parser("today", help="what is on today: events, tasks, recent changes")
+    p.add_argument("--vault", default="shared")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_today)
+
     p = sub.add_parser("ext", help="list, enable, disable or delete extensions")
     p.add_argument("action", choices=["list", "enable", "disable", "delete"])
     p.add_argument("kind", nargs="?", default="", choices=["", *extensions_kinds()])
@@ -532,7 +760,7 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=cmd_ext)
 
     p = sub.add_parser("users", help="manage dashboard accounts")
-    p.add_argument("action", choices=["add", "list", "remove"])
+    p.add_argument("action", choices=["add", "list", "passwd", "remove"])
     p.add_argument("name", nargs="?", default="")
     p.add_argument("--role", choices=["admin", "member"], default="member")
     p.add_argument("--brain")

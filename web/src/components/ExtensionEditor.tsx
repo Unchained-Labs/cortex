@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiSend } from "../api";
+import { useModalKeys, useUnloadGuard } from "../lib/modal";
 import Editor from "./Editor";
 
 /** One open editing session. `nonce` keys the component so every open starts
@@ -30,8 +31,38 @@ export default function ExtensionEditor({
   const [instructions, setInstructions] = useState(target.instructions);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const drawer = useRef<HTMLElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
 
   const isSkill = target.kind === "skill";
+
+  // What the drawer opened with, so "did the author change anything?" is a
+  // comparison rather than a guess.
+  const dirty =
+    name !== target.name ||
+    code !== target.code ||
+    description !== target.description ||
+    instructions !== target.instructions;
+
+  const titleId = `drawer-title-${target.kind}-${target.nonce}`;
+
+  /** Escape and a backdrop click both land here: unsaved code is never
+   *  discarded without asking first. */
+  const requestClose = useCallback(() => {
+    if (dirty && !window.confirm("Discard the changes in this editor?")) return;
+    onClose();
+  }, [dirty, onClose]);
+
+  useModalKeys(drawer, requestClose);
+  useUnloadGuard(dirty);
+
+  // Focus lands inside the drawer on open — the Name field when it is
+  // editable, the first control otherwise.
+  useEffect(() => {
+    const el = nameInput.current;
+    if (el && !el.disabled) el.focus();
+    else drawer.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [target.nonce]);
 
   const save = async () => {
     if (!name.trim() || busy) return;
@@ -53,14 +84,27 @@ export default function ExtensionEditor({
   };
 
   return (
-    <div className="drawer-scrim" onMouseDown={onClose}>
-      <section className="drawer" onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      className="drawer-scrim"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) requestClose();
+      }}
+    >
+      <section
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        ref={drawer}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <div className="editor-bar">
-          <span className="mono editor-path">
+          <span className="mono editor-path" id={titleId}>
             {target.kind} · {target.isNew ? "new" : target.name}
+            {dirty && <span className="dirty-dot" title="unsaved changes" />}
           </span>
           <div className="editor-actions">
-            <button className="btn btn-sm" onClick={onClose}>
+            <button className="btn btn-sm" onClick={requestClose}>
               Close
             </button>
             <button
@@ -80,6 +124,7 @@ export default function ExtensionEditor({
           <label className="field">
             <span>Name</span>
             <input
+              ref={nameInput}
               className="mono"
               autoComplete="off"
               placeholder="lowercase letters, digits, - or _"
@@ -104,7 +149,8 @@ export default function ExtensionEditor({
         <p className="drawer-hint muted">
           {isSkill
             ? "Instructions the agent follows literally."
-            : "Python. Saving runs this code on the server to check that it loads."}
+            : "Python. Saving runs this code on the server to check that it loads."}{" "}
+          Esc closes.
         </p>
 
         <Editor

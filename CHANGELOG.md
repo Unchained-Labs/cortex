@@ -6,6 +6,65 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- **Today** — a default view answering "what is on", computed without the
+  model so it works instantly and on a brain with no model configured.
+  Events, a few open tasks that tick through to the real file, what changed,
+  and journal entries from this date in earlier years. `GET /api/digest`,
+  `cortex today`.
+- **Capture** — one line into today's daily note from anywhere: **c** in the
+  dashboard, `cortex note "..."`, or the agent's `capture_note` tool.
+  `POST /api/capture`.
+- **Search view** — the hybrid search that already had an API now has a UI,
+  reachable with **/**.
+- **The agent can write**, narrowly: `capture_note`, `complete_task` (by
+  exact path and line), and `clip_url` (save a web page as markdown). No
+  general write-any-file tool, deliberately.
+- **Cold start** — `cortex setup` now offers to import an existing vault,
+  installs the bundled skills, and runs the index instead of printing it as
+  homework. `cortex demo` seeds obviously-labelled example notes so a new
+  brain can answer something; `cortex demo --remove` deletes them.
+- **Scheduled connectors** — set `interval_minutes` on a connector and the
+  server refreshes it, instead of a source going stale until someone
+  remembers a command.
+- **`cortex service install`** — a systemd user unit, because a household
+  brain that only runs while a terminal is open is not a household brain.
+- **Mentions** — naming someone in a channel records a mention for them
+  (`GET /api/mentions`); ambient chatter records nothing. Ambient activity
+  and being addressed are different signals and should look different.
+- Self-service password change, admin password reset, index/model health in
+  `GET /api/info`, `POST /api/reindex`, and `GET /api/file` for reading
+  connector output that was previously unopenable.
+
+### Fixed
+
+- **The daily view no longer shows a growing count of everything you have
+  not done.** It shows a handful of recent tasks and then ends. An
+  accumulating "N pending" counter on a daily surface is the documented way
+  to make people stop opening it, and the count was also wrong — the scan
+  truncates, so the total was a guess presented as a fact.
+- **Concurrent captures could silently lose a line.** Appending is
+  read-modify-write and four surfaces can do it at once; it is serialized
+  now, with a regression test that writes 40 notes from 8 threads.
+- **A personal vault's filenames leaked to every signed-in user** over the
+  WebSocket. `vault_changed` for a personal vault now goes only to its
+  owner, matching the scope model the rest of the product follows.
+- Unsaved vault edits were discarded silently when navigating away; the
+  extension editor discarded unsaved code on a stray backdrop click and
+  ignored Escape.
+- The dashboard was close to unusable on a phone: the header occupied 380px
+  of an iPhone screen (now 110px) because the marketing-site nav rule wrapped
+  the app's tab bar.
+- The agent's reply appeared twice in a channel, permanently.
+- A model that cannot be reached now says which endpoint failed instead of
+  "Connection error."
+- Channel agent threads rotate weekly rather than growing until they exceed
+  the context window.
+- Accessibility: aria roles and live regions added, unlabelled form controls
+  named, and 12px text moved off a token documented as failing AA at body
+  size.
+
 ## [0.2.1] - 2026-08-21
 
 ### Fixed

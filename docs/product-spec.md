@@ -38,6 +38,16 @@ All responses JSON unless stated. Errors: `{"detail": str}` with 4xx/5xx.
 - `GET /api/threads` → `{threads: [{thread, title, updated_at}]}` (user's own)
 - `GET /api/history?thread=` → `{thread, messages: [{role, body, at}]}`
 
+### Today and capture
+
+- `GET /api/digest` → `{day, tasks: [{path, text, line}], events: [{path, title, start,
+  today}], changed: [{path, mtime}], captured_today, total_open_tasks}`.
+  Computed without the model, scoped to the caller — it must answer instantly and on a
+  brain with no model configured.
+- `POST /api/capture` `{text, vault?}` → `{vault, path, line}`. Appends one timestamped
+  line to today's daily note (`journal/YYYY-MM-DD.md`) in the caller's own vault by
+  default. 422 on empty text, 404 for a vault the caller may not write.
+
 ### Search
 - `GET /api/search?q=` → `{used_vectors, hits: [{path, score, passages: [{heading, text,
   start_line}]}]}` — scoped to the caller (shared + own vault + sources).
@@ -144,6 +154,22 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
+
+### Today, capture and search (v0.3)
+
+- **Today** is the default tab and the first thing a user sees. It renders
+  `/api/digest`: events today and coming up, open tasks (each a checkbox that ticks
+  the real file), what changed recently, and how much was captured today. Every item
+  links into the Vault view. On an empty brain it must not be a blank pane — it says
+  what to do first (capture, import, connect a calendar) with buttons that go there.
+- **Capture** is global: a **c** keypress from any tab (except while typing) opens a
+  one-line box; Enter files it via `POST /api/capture` and Escape cancels. It is the
+  single most-used control in the product — it must never take more than one keypress
+  to reach.
+- **Search** is a tab of its own over `GET /api/search`: a query box, hits grouped by
+  file with their matching passages, headings shown, and a note when results are
+  full-text only. Clicking a hit opens it in the Vault view at that file. Reachable
+  with **/** from anywhere.
 6. **Sign-in** — username/password against /api/auth/login.
 
 Build: `npm run build` outputs to `../src/cortex/server/webdist/` (vite `outDir`,

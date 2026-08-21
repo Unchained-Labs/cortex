@@ -164,6 +164,15 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "stream failed");
+      // Nothing came back, so nothing was said: hand the typed message back
+      // rather than making someone retype it. (Channels already does this.)
+      if (!finalText && !acc.text && acc.activity.length === 0) {
+        setMessages((m) => {
+          const last = m[m.length - 1];
+          return last && last.role === "user" && last.body === message ? m.slice(0, -1) : m;
+        });
+        setInput((cur) => (cur.trim() ? cur : message));
+      }
     }
     const body = finalText ?? acc.text;
     if (body || acc.activity.length > 0) {
@@ -229,8 +238,10 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
               )}
             </div>
           ))}
+          {/* the answer arrives token by token; a screen reader is told about
+              it politely rather than left with a silent, growing block */}
           {stream && (
-            <div className="msg msg-assistant">
+            <div className="msg msg-assistant" aria-live="polite" aria-busy="true">
               <span className="msg-author label">cortex</span>
               <Activity lines={stream.activity} />
               {stream.text ? (
@@ -245,6 +256,7 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
         <div className="composer">
           <textarea
             rows={2}
+            aria-label="Message the agent"
             placeholder="Message the agent — Enter to send, Shift+Enter for newline"
             value={input}
             onChange={(e) => setInput(e.target.value)}
