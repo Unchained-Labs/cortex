@@ -11,13 +11,13 @@
     display: flex; align-items: center; justify-content: center;
     text-align: center; background: var(--ul-bg);
   }
-  .card-wrap { max-width: 900px; padding: 0 3rem; }
+  .card-wrap { max-width: 940px; padding: 0 3rem; }
   .card-wrap img.lockup { height: 34px; margin-bottom: 2.2rem; }
   h1 {
     font-size: 3.4rem; line-height: 1.1; margin: 0 0 1.1rem;
     letter-spacing: var(--ul-track-display);
   }
-  .sub { font-size: 1.25rem; color: var(--ul-body); max-width: 40ch; margin: 0 auto; }
+  .sub { font-size: 1.25rem; color: var(--ul-body); max-width: 44ch; margin: 0 auto; }
   .kicker {
     font-family: var(--ul-font-display); font-size: 0.85rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: var(--ul-track-label);
@@ -39,16 +39,20 @@ const CARDS = {
   intro: {
     lockup: true,
     h: "A brain your whole household can talk to.",
-    sub: "Shared vaults, peer chat, and an agent that reads your notes — on a model you run yourself.",
+    sub: "Notes, tasks and calendars in one place — on a model you run yourself.",
   },
-  chat: { k: "01 · Ask", h: "It searches before it answers.",
-          sub: "Hybrid retrieval over your notes, tool calls streamed live, every answer cited." },
-  vault: { k: "02 · Write", h: "Your vault, Obsidian-style.",
-           sub: "Shared and personal vaults — callouts, tasks, wikilinks, edited in the browser." },
-  channels: { k: "03 · Together", h: "Chat with your people — and @cortex.",
-              sub: "Peer channels over WebSocket. The agent answers from the shared vault only." },
-  extend: { k: "04 · Expand", h: "Write a plugin. It is live.",
-            sub: "Plugins, skills, connectors and MCP servers — managed in the browser, loaded before they are saved." },
+  today: { k: "01 · Today", h: "It already knows what is on.",
+           sub: "Events, a few open tasks, what changed. Computed without the model, so it answers before you finish opening it." },
+  capture: { k: "02 · Capture", h: "One key. One line. Done.",
+             sub: "Press c anywhere. No folder to pick, no title to invent — search does not care where a line lives." },
+  ask: { k: "03 · Ask", h: "It searches before it answers.",
+         sub: "Hybrid retrieval over your own notes, tool calls in the open, every answer cited." },
+  together: { k: "04 · Together", h: "Chat with your people — and @cortex.",
+              sub: "Peer channels over WebSocket. The agent answers from the shared vault, never anyone's private one." },
+  tidy: { k: "05 · Tidy", h: "It files things while you are not looking.",
+          sub: "Rules move, tag and archive on a schedule. Nothing is ever deleted, and preview shows every change first." },
+  expand: { k: "06 · Expand", h: "Pick a skill, or write one.",
+            sub: "Ready-made skills and connectors in a click. Plugins and MCP servers when you want your own." },
   outro: { lockup: true, h: "cortex", sub: "Self-hosted. Your model. MIT.",
            cmd: "pip install cortxai", url: "unchained-labs.github.io/cortex" },
 };

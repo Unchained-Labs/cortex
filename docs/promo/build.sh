@@ -57,39 +57,40 @@ scene() { # scene <name>
     -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p "$SEG/s-$1.mp4"
 }
 
-card intro 2.8
-card chat 2.0
-card vault 2.0
-card channels 2.0
-card extend 2.0
+card intro 3.0
+card today 2.2
+card capture 2.2
+card ask 2.2
+card together 2.2
+card tidy 2.4
+card expand 2.2
 card outro 3.2
-for s in chat vault channels extend; do scene "$s"; done
+for s in today capture ask together tidy expand; do scene "$s"; done
 
-cat > "$WORK/concat.txt" <<EOF
-file '$SEG/intro.mp4'
-file '$SEG/chat.mp4'
-file '$SEG/s-chat.mp4'
-file '$SEG/vault.mp4'
-file '$SEG/s-vault.mp4'
-file '$SEG/channels.mp4'
-file '$SEG/s-channels.mp4'
-file '$SEG/extend.mp4'
-file '$SEG/s-extend.mp4'
-file '$SEG/outro.mp4'
-EOF
+# One card, then the thing itself, six times over.
+{
+  for s in intro today capture ask together tidy expand; do
+    echo "file '$SEG/$s.mp4'"
+    case "$s" in
+      intro) ;;
+      *) echo "file '$SEG/s-$s.mp4'" ;;
+    esac
+  done
+  echo "file '$SEG/outro.mp4'"
+} > "$WORK/concat.txt"
 
 ffmpeg -y -loglevel error -f concat -safe 0 -i "$WORK/concat.txt" \
   -c:v libx264 -preset slow -crf 26 -pix_fmt yuv420p -movflags +faststart \
   "$OUT/cortex-promo.mp4"
 
 # Poster: the chat scene mid-answer.
-ffmpeg -y -loglevel error -sseof -4 -i "$SEG/s-chat.mp4" -frames:v 1 \
+ffmpeg -y -loglevel error -sseof -4 -i "$SEG/s-today.mp4" -frames:v 1 \
   "$OUT/cortex-poster.png"
 
 # README gif: the chat scene, 720px, 9 fps, palette-optimized.
-ffmpeg -y -loglevel error -i "$SEG/s-chat.mp4" \
+ffmpeg -y -loglevel error -i "$SEG/s-ask.mp4" \
   -vf "fps=9,scale=720:-1:flags=lanczos,palettegen" "$WORK/palette.png"
-ffmpeg -y -loglevel error -i "$SEG/s-chat.mp4" -i "$WORK/palette.png" \
+ffmpeg -y -loglevel error -i "$SEG/s-ask.mp4" -i "$WORK/palette.png" \
   -lavfi "fps=9,scale=720:-1:flags=lanczos[x];[x][1:v]paletteuse" \
   "$OUT/cortex-demo.gif"
 

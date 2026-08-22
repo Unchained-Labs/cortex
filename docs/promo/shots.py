@@ -1,8 +1,9 @@
 """Drive the real dashboard and record the promo scenes.
 
-Every scene is the shipped SPA against the running server — the streaming,
-tool calls, WebSocket fan-out and vault writes on film are the product
-working. Usage: shots.py <workdir> (expects the server on :8646).
+Every scene is the shipped SPA against the running server — the digest,
+capture, streaming, tool calls, WebSocket fan-out, rule preview and vault
+writes on film are the product working. Only the model is scripted.
+Usage: shots.py <workdir> (expects the server on :8646).
 
 Scenes land as <workdir>/scenes/<name>.webm; title cards as
 <workdir>/cards/<name>.png. A failing scene leaves fail-<name>.png and its
@@ -18,26 +19,11 @@ from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8646"
 SIZE = {"width": 1280, "height": 800}
-CARDS = ["intro", "chat", "vault", "channels", "extend", "outro"]
+CARDS = ["intro", "today", "capture", "ask", "together", "tidy", "expand", "outro"]
 
+CAPTURE_TEXT = "the boiler service is due in March"
 GARDEN_Q = "what's on the garden list for this weekend?"
 KYOTO_Q = "@cortex when is the Kyoto trip again — anything left to do?"
-
-PLUGIN_CODE = """from cortex.plugins import ToolPlugin
-
-
-def register(registry):
-    def bin_night(week: str = "this week") -> str:
-        return f"{week}: green bin Tuesday, recycling Friday"
-
-    registry.register(
-        ToolPlugin(
-            name="bin_night",
-            description="Which bin goes out, and when.",
-            func=bin_night,
-        )
-    )
-"""
 
 
 def main(workdir: Path) -> None:  # noqa: C901
@@ -70,6 +56,7 @@ def main(workdir: Path) -> None:  # noqa: C901
             page = ctx.new_page()
             page.set_default_timeout(45000)
             page.on("console", lambda m: console_log.append(f"[{name}] {m.type}: {m.text}"))
+            page.on("dialog", lambda d: d.accept())
             try:
                 fn(ctx, page)
             except Exception:
@@ -89,10 +76,10 @@ def main(workdir: Path) -> None:  # noqa: C901
             page.wait_for_timeout(800)
             if tab:
                 page.locator(".app-tabs .tab", has_text=tab).click()
-                page.wait_for_timeout(600)
+                page.wait_for_timeout(700)
 
-        # ---- scene 1: sign in, ask, watch the tool loop, click the cite --
-        def scene_chat(ctx, page) -> None:
+        # ---- 1: sign in, land on Today, tick something off ---------------
+        def scene_today(ctx, page) -> None:
             page.goto(BASE)
             page.wait_for_selector("input")
             page.wait_for_timeout(900)
@@ -100,47 +87,48 @@ def main(workdir: Path) -> None:  # noqa: C901
             page.locator("input[type=password]").type("demo-password", delay=45)
             page.wait_for_timeout(300)
             page.locator("button.primary").click()
+            # Today is the default tab: no navigation, it is just there
+            page.wait_for_selector(".today-view")
+            page.wait_for_timeout(3000)
+            ctx.storage_state(path=str(state_path))
+            boxes = page.locator(".today-view input[type=checkbox]:not(:checked)")
+            if boxes.count():
+                boxes.first.click()  # writes through to the real file
+                page.wait_for_timeout(2400)
+
+        run_scene("today", scene_today)
+
+        # ---- 2: capture — one key, one line ------------------------------
+        def scene_capture(ctx, page) -> None:
+            open_app(page)
+            page.wait_for_timeout(700)
+            page.keyboard.press("c")
+            page.wait_for_selector(".capture-box .capture-input")
+            page.wait_for_timeout(800)
+            page.keyboard.type(CAPTURE_TEXT, delay=42)
+            page.wait_for_timeout(500)
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(2600)
+
+        run_scene("capture", scene_capture, storage=str(state_path))
+
+        # ---- 3: ask, watch the tool call, follow the citation ------------
+        def scene_ask(ctx, page) -> None:
+            open_app(page, "Chat")
             page.wait_for_selector(".chat .composer textarea")
-            page.wait_for_timeout(1200)
+            page.wait_for_timeout(900)
             page.locator(".chat .composer textarea").type(GARDEN_Q, delay=34)
             page.wait_for_timeout(350)
             page.keyboard.press("Enter")
             page.wait_for_selector(".chat .vault-cite", timeout=45000)
-            page.wait_for_timeout(2200)
-            ctx.storage_state(path=str(state_path))
+            page.wait_for_timeout(2400)
             page.locator(".chat .vault-cite").first.click()
             page.wait_for_timeout(2600)
 
-        run_scene("chat", scene_chat)
+        run_scene("ask", scene_ask, storage=str(state_path))
 
-        # ---- scene 2: the vault — preview, live task toggle, edit, save --
-        def scene_vault(ctx, page) -> None:
-            open_app(page, "Vault")
-            page.wait_for_selector(".vault .tree-row.tree-file")
-            page.wait_for_timeout(900)
-            page.locator(".vault .tree-row.tree-file", has_text="garden.md").first.click()
-            page.wait_for_timeout(1200)
-            page.locator(".vault").get_by_role("button", name="Preview").click()
-            page.wait_for_timeout(2200)
-            boxes = page.locator(".vault .pane input[type=checkbox]:not(:checked)")
-            if boxes.count():
-                boxes.first.click()  # write-through task toggle
-                page.wait_for_timeout(1700)
-            page.locator(".vault").get_by_role("button", name="Edit").click()
-            page.wait_for_selector(".vault .cm-content")
-            page.locator(".vault .cm-content").click()
-            page.keyboard.press("Control+End")
-            page.keyboard.type("\n- [ ] Pick the last tomatoes for [[shakshuka]]", delay=32)
-            page.wait_for_timeout(500)
-            page.keyboard.press("Control+s")
-            page.wait_for_timeout(900)
-            page.locator(".vault").get_by_role("button", name="Preview").click()
-            page.wait_for_timeout(2300)
-
-        run_scene("vault", scene_vault, storage=str(state_path))
-
-        # ---- scene 3: channels — peers, then @cortex answers live --------
-        def scene_channels(ctx, page) -> None:
+        # ---- 4: channels — peers, then @cortex answers live --------------
+        def scene_together(ctx, page) -> None:
             open_app(page, "Channels")
             page.locator(".channels .side-item", has_text="general").first.click()
             page.wait_for_selector(".channels .composer textarea:not([disabled])")
@@ -153,30 +141,39 @@ def main(workdir: Path) -> None:  # noqa: C901
             )
             page.wait_for_timeout(2600)
 
-        run_scene("channels", scene_channels, storage=str(state_path))
+        run_scene("together", scene_together, storage=str(state_path))
 
-        # ---- scene 4: the Extend panel — write a plugin, watch it land ---
-        def scene_extend(ctx, page) -> None:
+        # ---- 5: automation — add a rule, preview it, apply it ------------
+        def scene_tidy(ctx, page) -> None:
+            open_app(page, "Automation")
+            page.wait_for_timeout(1800)
+            # take the ready-made "file recipes" rule
+            page.locator("button", has_text="tag matches 'recipe'").first.click()
+            page.wait_for_timeout(1600)
+            # it arrives switched off — turn it on, then look before leaping
+            toggle = page.locator(".auto-row .toggle").first
+            if toggle.count():
+                toggle.click()
+                page.wait_for_timeout(1600)
+            page.locator("button", has_text="Preview changes").first.click()
+            page.wait_for_timeout(2800)
+            page.locator("button", has_text="Apply").first.click()
+            page.wait_for_timeout(3000)
+
+        run_scene("tidy", scene_tidy, storage=str(state_path))
+
+        # ---- 6: extend — take a ready-made skill -------------------------
+        def scene_expand(ctx, page) -> None:
             open_app(page, "Extend")
-            page.wait_for_selector(".ext-section")
-            page.wait_for_timeout(2600)
-            # write a new plugin in the browser
-            page.locator("section", has_text="Plugins").locator(
-                "button", has_text="+ New"
-            ).first.click()
-            page.wait_for_selector(".drawer .cm-content")
+            page.wait_for_selector(".lib-card")
+            page.wait_for_timeout(2000)
+            card = page.locator(".lib-card", has_text="meeting-notes").first
+            card.scroll_into_view_if_needed()
             page.wait_for_timeout(900)
-            page.locator(".drawer input").first.type("bins", delay=60)
-            page.locator(".drawer .cm-content").click()
-            page.keyboard.press("Control+a")
-            page.keyboard.insert_text(PLUGIN_CODE)
-            page.wait_for_timeout(700)
-            page.locator(".drawer").get_by_role("button", name="Save").click()
-            # the row appears with the tool it registered — no restart
-            page.wait_for_selector(".ext-row:has-text('bins')", timeout=20000)
+            card.locator("button", has_text="Add").click()
             page.wait_for_timeout(2600)
 
-        run_scene("extend", scene_extend, storage=str(state_path))
+        run_scene("expand", scene_expand, storage=str(state_path))
 
         browser.close()
     print(f"scenes in {scenes_dir}, cards in {cards_dir}")

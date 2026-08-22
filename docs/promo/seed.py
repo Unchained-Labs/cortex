@@ -7,6 +7,8 @@ Real stack, real content: the only substituted part of the film is the model
 from __future__ import annotations
 
 import sys
+from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -124,6 +126,20 @@ description: How this household runs its Sunday review
 3. End with the one thing that matters on Monday.
 """
 
+ROAST = """\
+---
+tags: [recipe]
+---
+
+# Roast chicken
+
+Scribbled down before it got filed anywhere.
+
+- One bird, hot oven, 20 minutes a pound.
+- Lemon and thyme in the cavity, butter under the skin.
+- Rest it for as long as you can stand.
+"""
+
 CHANNEL_SEED = [
     ("sam", "the fig tree situation is getting out of hand, the magpies had a feast"),
     ("erwin", "netting it this weekend — it's on the garden list"),
@@ -139,6 +155,8 @@ def main(workdir: Path) -> None:
     (root / "cortex.yaml").write_text(CONFIG, encoding="utf-8")
     shared = root / "vaults" / "shared"
     (shared / "garden.md").write_text(GARDEN, encoding="utf-8")
+    # deliberately unfiled, so the rules scene has a real note to move
+    (shared / "roast-chicken.md").write_text(ROAST, encoding="utf-8")
     (shared / "recipes" / "shakshuka.md").write_text(SHAKSHUKA, encoding="utf-8")
     (shared / "trips" / "kyoto.md").write_text(KYOTO, encoding="utf-8")
     (shared / "homelab.md").write_text(HOMELAB, encoding="utf-8")
@@ -166,6 +184,20 @@ def main(workdir: Path) -> None:
         },
         False,  # disabled: the demo has no Home Assistant to reach
     )
+
+    events = root / "sources" / "calendar_ics"
+    events.mkdir(parents=True, exist_ok=True)
+    today = date.today()
+    for offset, hour, title in (
+        (0, 18, "Dentist — Priya"),
+        (1, 9, "Bin day"),
+        (3, 19, "Dinner with the Okonkwos"),
+    ):
+        when = datetime.combine(today + timedelta(days=offset), dtime(hour, 0))
+        (events / f"{when:%Y-%m-%d}-{title.split()[0].lower()}.md").write_text(
+            f"# {title}\n\n- Calendar: home\n- Start: {when.isoformat()}\n",
+            encoding="utf-8",
+        )
 
     channel = brain.store.ensure_channel("general", "cortex")
     for author, body in CHANNEL_SEED:
