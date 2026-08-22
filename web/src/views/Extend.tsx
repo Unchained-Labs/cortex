@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
-import type { Extension, ExtensionList } from "../types";
+import type { Extension, ExtensionList, SkillLibrary as Library } from "../types";
 import ConnectorPanel from "../components/ConnectorPanel";
 import ExtensionEditor, { type EditorTarget } from "../components/ExtensionEditor";
 import McpForm, { type McpTarget } from "../components/McpForm";
+import ConnectorLibrary from "../components/ConnectorLibrary";
+import SkillLibrary from "../components/SkillLibrary";
 
 const EMPTY: ExtensionList = {
   plugins: [],
@@ -119,36 +121,51 @@ function Row({
   );
 }
 
+/**
+ * One kind of extension: what it does for you, then what you have, then —
+ * for skills — what you could have without writing anything. The blurb
+ * leads, because a list of names never says what any of it is *for*.
+ */
 function Section({
   title,
+  blurb,
   items,
+  newLabel,
   onNew,
+  empty,
   children,
+  footer,
 }: {
   title: string;
+  blurb: string;
   items: Extension[];
+  newLabel: string;
   onNew: () => void;
+  /** what to say instead of a list when there is nothing installed */
+  empty?: string;
   children: (ext: Extension) => React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   return (
     <section className="card ext-section">
       <div className="ext-section-head">
         <h3>{title}</h3>
         <button className="btn btn-sm" onClick={onNew}>
-          + New
+          {newLabel}
         </button>
       </div>
-      {items.length === 0 ? (
-        <p className="muted">None yet.</p>
-      ) : (
-        items.map((ext) => <div key={ext.name}>{children(ext)}</div>)
-      )}
+      <p className="ext-blurb">{blurb}</p>
+      {items.length === 0
+        ? empty !== undefined && <p className="muted ext-empty">{empty}</p>
+        : items.map((ext) => <div key={ext.name}>{children(ext)}</div>)}
+      {footer}
     </section>
   );
 }
 
 export default function Extend({ active }: { active: boolean }) {
   const [list, setList] = useState<ExtensionList>(EMPTY);
+  const [library, setLibrary] = useState<Library>({ skills: [], connectors: [] });
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState<EditorTarget | null>(null);
   const [mcp, setMcp] = useState<McpTarget | null>(null);
@@ -157,6 +174,11 @@ export default function Extend({ active }: { active: boolean }) {
     apiGet<ExtensionList>("/api/extensions")
       .then((r) => setList({ ...EMPTY, ...r }))
       .catch((e) => setError(e instanceof Error ? e.message : "failed to load extensions"));
+    // The library is what makes an empty Skills section useful, so a failure
+    // here is not worth a banner — the section still lists what is installed.
+    apiGet<Library>("/api/extensions/library")
+      .then((r) => setLibrary({ skills: r.skills ?? [], connectors: r.connectors ?? [] }))
+      .catch(() => setLibrary({ skills: [], connectors: [] }));
   }, []);
 
   useEffect(() => {
@@ -248,14 +270,11 @@ export default function Extend({ active }: { active: boolean }) {
   return (
     <div className="extend-view">
       <div className="wrap">
-        <h2>Extend</h2>
-
-        <div className="banner banner-notice extend-warning">
-          <span>
-            Saving a plugin or connector runs that code on the server, as the cortex user. It
-            is the same trust level as a stdio MCP server, and the reason this panel is
-            admin-only.
-          </span>
+        <div className="extend-head">
+          <h2>Extend</h2>
+          <p className="extend-lead">
+            What the agent can reach for. Four kinds, from ready-made to written by you.
+          </p>
         </div>
 
         {error && (
@@ -292,23 +311,43 @@ export default function Extend({ active }: { active: boolean }) {
           </div>
         )}
 
-        <Section title="Plugins" items={list.plugins} onNew={() => void openNew("plugin")}>
+        <Section
+          title="Plugins"
+          blurb="Python functions the agent can call. Each one becomes a tool it can reach for in the middle of an answer."
+          items={list.plugins}
+          newLabel="+ Write a plugin"
+          onNew={() => void openNew("plugin")}
+          empty="No plugins yet. The agent still has its built-in tools."
+        >
           {row}
         </Section>
-        <Section title="Skills" items={list.skills} onNew={() => void openNew("skill")}>
+        <Section
+          title="Skills"
+          blurb="Procedures the agent follows. Written in plain markdown, not code."
+          items={list.skills}
+          newLabel="Write your own"
+          onNew={() => void openNew("skill")}
+          footer={<SkillLibrary skills={library.skills} onAdded={load} />}
+        >
           {row}
         </Section>
         <Section
           title="Connectors"
+          blurb="Pull in what lives somewhere else — a calendar, a feed — and write it into the brain as files it can read."
           items={list.connectors}
+          newLabel="Write your own"
           onNew={() => void openNew("connector")}
+          footer={<ConnectorLibrary connectors={library.connectors} onAdded={load} />}
         >
           {row}
         </Section>
         <Section
           title="MCP servers"
+          blurb="Tools from a program you run or a service you point at. The agent uses them exactly like its own."
           items={list.mcp_servers}
+          newLabel="+ Add a server"
           onNew={() => setMcp({ ext: null, nonce: Date.now() })}
+          empty="No MCP servers yet."
         >
           {row}
         </Section>

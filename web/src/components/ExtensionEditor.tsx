@@ -120,6 +120,18 @@ export default function ExtensionEditor({
 
         {error && <p className="drawer-error">✗ {error}</p>}
 
+        {/* The warning belongs where code is written, not at the top of a page
+            most people open to read a list. Same words, one step closer. */}
+        {!isSkill && (
+          <div className="banner banner-notice drawer-warning">
+            <span>
+              Saving a plugin or connector runs that code on the server, as the cortex user.
+              It is the same trust level as a stdio MCP server, and the reason this panel is
+              admin-only.
+            </span>
+          </div>
+        )}
+
         <div className="drawer-fields">
           <label className="field">
             <span>Name</span>

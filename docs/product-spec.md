@@ -106,6 +106,39 @@ same trust level as a stdio MCP server. The UI must say this where code is edite
   then a re-index is queued.
 - `DELETE /api/extensions/{kind}/{name}` → `{ok}`. 422 for a cortex.yaml-defined MCP server.
 
+### Rules and scheduled jobs (role=admin only)
+
+**Rules** tidy the vault: match notes, then move, tag or archive them. They move
+someone's writing, so the design is constrained — there is no delete action, preview is
+always available and free, and every applied change is logged.
+
+- `GET /api/rules` → `{rules: [R], suggested: [R], match_kinds, action_kinds}` where R is
+  `{name, vault, matches: [{kind, value}], action: {kind, value}, enabled, describes}`.
+  `describes` is a plain-English sentence ("tag matches 'recipe' → move into recipes/") —
+  render it, do not make the user reconstruct it from the parts.
+  `match_kinds`: path (glob), tag, frontmatter (`key` or `key: value`), content,
+  older_than_days. `action_kinds`: move, tag, archive. `suggested` are ready-made rules,
+  all `enabled: false`.
+- `PUT /api/rules {rule}` → the saved rule, or **422 with a plain reason**.
+- `DELETE /api/rules/{name}`
+- `GET /api/rules/preview` → `{planned: [{path, rule, action, target}], count}` — exactly
+  what a run would do, having done none of it. **The panel must offer this before apply.**
+- `POST /api/rules/apply` → `{actions, count}`; each action is `{rule, action, path, target}`,
+  and `action: "error"` carries the reason in `target`.
+- `GET /api/rules/history` → `{history: [{at, rule, action, path, target}]}` — "where did
+  my note go" must always have an answer.
+
+**Jobs** are the clock. Kinds: `connector` (settings `{connector}`), `index`, `rules`
+(settings `{dry_run}`), `digest` (settings `{vault}`, writes `briefings/<day>.md`),
+`channel_digest` (settings `{channel}`, posts into a channel and **posts nothing when the
+digest is empty**). Intervals are hours, not cron.
+
+- `GET /api/jobs` → `{jobs: [J], suggested: [J], kinds, connectors}`; J is
+  `{name, kind, interval_hours, settings, enabled, last_run, last_status, last_detail,
+  describes}`. `describes` again reads as a sentence ("apply the tidying rules daily").
+- `PUT /api/jobs {job}` → saved job or 422.
+- `DELETE /api/jobs/{name}`, `POST /api/jobs/{name}/run` → `{name, status, detail}`.
+
 ### Admin (role=admin only)
 - `GET /api/admin/users` → `{users: [{username, role, created_at}]}`
 - `POST /api/admin/users` `{username, password, role}` → 201
@@ -154,6 +187,35 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
+
+### Extend, redesigned (v0.4)
+
+The current page is four flat lists of names under a warning about arbitrary code
+execution — it tells you what you have, never what any of it is *for*. Rework it so
+each section leads with one plain sentence about what that kind of extension does for
+you, and so the common case is picking something ready-made rather than writing code:
+
+- **Skills** and **Connectors** show a small **library** of ready-made ones with a
+  one-line description and an Add button. Writing your own stays available, one click
+  further in. An empty section must show the library, never an empty list.
+- Every row says what it *gives you*: a plugin's tool names, a skill's description, a
+  connector's last run and result, an MCP server's transport.
+- Keep the code-execution warning, but put it where code is written (the editor), not
+  as the first thing on the page.
+
+### Automation (admins only, new tab)
+
+Two panels on one page, because they are one idea — things the brain does without being
+asked:
+
+- **Rules**: a list of rules each rendered as its `describes` sentence with an enable
+  toggle. A builder that composes conditions and an action from dropdowns (no raw JSON).
+  **Preview is the primary button**, showing a table of "this note → that folder" before
+  anything moves; Apply is secondary and confirms. A history list underneath.
+- **Scheduled jobs**: each as its `describes` sentence ("apply the tidying rules daily"),
+  with last run, last status (`--ul-up`/`--ul-down`), enable toggle, and Run now. Adding
+  one is a kind dropdown plus an interval in human units (hourly / every 6 hours / daily /
+  twice a day / weekly), not a cron string. Offer the `suggested` jobs as one-click adds.
 
 ### Today, capture and search (v0.3)
 

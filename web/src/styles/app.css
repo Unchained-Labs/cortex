@@ -128,7 +128,7 @@ kbd {
 .app-main { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .view { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .view.hidden { display: none; }
-.today-view, .import-view, .admin-view, .extend-view { min-width: 0; }
+.today-view, .import-view, .admin-view, .extend-view, .automation-view { min-width: 0; }
 
 .split { display: flex; flex: 1; min-height: 0; min-width: 0; width: 100%; }
 
@@ -607,7 +607,9 @@ select { cursor: pointer; }
   overflow-y: auto;
   padding: var(--ul-space-8) 0;
 }
-.extend-warning { border-left-width: 3px; margin-bottom: var(--ul-space-4); }
+.extend-head { margin-bottom: var(--ul-space-6); }
+.extend-head h2 { margin-bottom: var(--ul-space-1); }
+.extend-lead { font-size: var(--ul-text-sm); color: var(--ul-muted); margin: 0; max-width: 46em; }
 .extend-strip { align-items: flex-start; }
 .extend-strip .label { margin: 0 0 var(--ul-space-1); }
 .extend-foot { font-size: var(--ul-text-sm); margin-top: var(--ul-space-4); }
@@ -622,6 +624,44 @@ select { cursor: pointer; }
 }
 .ext-section-head h3 { margin: 0; }
 .ext-section > p { margin: 0; font-size: var(--ul-text-sm); }
+
+/* The one sentence that says what this kind of extension does for you. It
+ * leads the section, above anything you happen to have installed. */
+.ext-blurb {
+  margin: 0 0 var(--ul-space-3);
+  font-size: var(--ul-text-sm);
+  color: var(--ul-muted);
+  max-width: 52em;
+}
+.ext-empty { font-size: var(--ul-text-sm); }
+
+/* ---- skill library ------------------------------------------------------- */
+
+.lib { margin-top: var(--ul-space-4); }
+.lib .label { margin: 0 0 var(--ul-space-1); }
+.lib .ext-blurb { margin-bottom: var(--ul-space-3); }
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--ul-space-3);
+}
+.lib-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ul-space-2);
+  min-width: 0;
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+  padding: var(--ul-space-3);
+}
+.lib-card .btn { margin-top: auto; }
+.lib-have { border-style: dashed; }
+.lib-name { margin: 0; font-size: var(--ul-text-sm); color: var(--ul-heading); overflow-wrap: anywhere; }
+.lib-desc { margin: 0; flex: 1; font-size: var(--ul-text-xs); color: var(--ul-muted); }
+.lib-installed { font-size: var(--ul-text-xs); color: var(--ul-up); margin-top: auto; }
 
 .ext-row {
   padding: var(--ul-space-3) 0;
@@ -751,6 +791,203 @@ select { cursor: pointer; }
   padding: 0 var(--ul-space-4) var(--ul-space-2);
 }
 .kv-row input { flex: 1; min-width: 0; font-size: var(--ul-text-sm); }
+
+/* The code-execution warning, now inside the drawer where code is written. */
+.drawer-warning {
+  flex: none;
+  margin: 0;
+  border-left-width: 3px;
+  align-items: flex-start;
+}
+
+/* ---- automation ---------------------------------------------------------- */
+
+.automation-view {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-8) 0;
+}
+.auto-wrap { max-width: 940px; }
+.auto-head { margin-bottom: var(--ul-space-6); }
+.auto-head h2 { margin-bottom: var(--ul-space-1); }
+.auto-lead { font-size: var(--ul-text-sm); color: var(--ul-muted); margin: 0; max-width: 46em; }
+
+.auto-panel { margin-bottom: var(--ul-space-4); }
+.auto-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ul-space-3);
+  margin-bottom: var(--ul-space-1);
+}
+.auto-panel-head h3 { margin: 0; }
+.auto-blurb {
+  margin: 0 0 var(--ul-space-3);
+  font-size: var(--ul-text-sm);
+  color: var(--ul-muted);
+  max-width: 52em;
+}
+.auto-none {
+  font-size: var(--ul-text-sm);
+  margin: 0;
+  padding-top: var(--ul-space-3);
+  border-top: 1px solid var(--ul-line);
+}
+
+/* a rule or a job, led by the sentence that says what it does */
+.auto-rows { margin-bottom: var(--ul-space-3); }
+.auto-row { padding: var(--ul-space-3) 0; border-top: 1px solid var(--ul-line); }
+
+.auto-row-head {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+}
+.auto-sentence {
+  flex: 1;
+  min-width: 12em;
+  margin: 0;
+  font-size: var(--ul-text-base);
+  color: var(--ul-heading);
+  overflow-wrap: anywhere;
+}
+/* a switched-off rule still reads, but it is plainly not doing anything */
+.auto-off { color: var(--ul-muted); }
+.auto-broken { color: var(--ul-down); }
+.auto-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+}
+.auto-row-meta {
+  margin: var(--ul-space-1) 0 0;
+  font-size: var(--ul-text-xs);
+  color: var(--ul-body);
+  overflow-wrap: anywhere;
+}
+.auto-row-meta .run-ok, .auto-row-meta .run-fail { margin-left: var(--ul-space-2); }
+.auto-ran { margin: var(--ul-space-2) 0 0; font-size: var(--ul-text-sm); }
+
+/* ready-made rules and jobs, as one-click chips reading their own sentence */
+.auto-suggested { margin-top: var(--ul-space-4); }
+.auto-suggested .label { margin: 0 0 var(--ul-space-1); }
+.auto-chips { display: flex; flex-wrap: wrap; gap: var(--ul-space-2); }
+.auto-chip {
+  appearance: none;
+  font-family: var(--ul-font-body);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--ul-space-2);
+  max-width: 100%;
+  cursor: pointer;
+  text-align: left;
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius-pill);
+  padding: 0.3em var(--ul-space-3);
+  color: var(--ul-body);
+  font-size: var(--ul-text-sm);
+}
+.auto-chip:hover { border-color: var(--ul-accent-dim); color: var(--ul-heading); }
+.auto-chip-add {
+  flex: none;
+  font-family: var(--ul-font-display);
+  font-size: var(--ul-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ul-track-label);
+  color: var(--ul-accent);
+}
+.auto-chip-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* Preview leads, apply follows — the button order is the safety argument. */
+.auto-run {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-3);
+  margin-top: var(--ul-space-4);
+  padding-top: var(--ul-space-3);
+  border-top: 1px solid var(--ul-line);
+}
+.auto-run-hint { font-size: var(--ul-text-xs); }
+
+.auto-result {
+  margin-top: var(--ul-space-3);
+  padding: var(--ul-space-3);
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+}
+.auto-result > .label { margin: 0 0 var(--ul-space-2); }
+/* inside a result box the label is already the divider */
+.auto-result .auto-none { border-top: 0; padding-top: 0; }
+.auto-result > p:last-child { margin-bottom: 0; }
+.auto-group + .auto-group { margin-top: var(--ul-space-3); }
+.auto-group:last-child .table-scroll { margin-bottom: 0; }
+.auto-group-head { margin: 0 0 var(--ul-space-1); font-size: var(--ul-text-sm); }
+.auto-table { background: none; }
+.auto-table td { padding: var(--ul-space-2) var(--ul-space-3); }
+.auto-path { font-size: var(--ul-text-xs); overflow-wrap: anywhere; }
+.auto-arrow { color: var(--ul-accent); }
+.auto-applied-row { margin: var(--ul-space-1) 0 0; font-size: var(--ul-text-xs); }
+
+/* "where did my note go" — the log, labelled as the answer to the question */
+.auto-history { margin-top: var(--ul-space-4); padding-top: var(--ul-space-3); border-top: 1px solid var(--ul-line); }
+.auto-history .label { margin: 0 0 var(--ul-space-1); }
+.auto-history-list { list-style: none; margin: 0; padding: 0; }
+.auto-history-list > li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+  padding: var(--ul-space-2) 0;
+  border-top: 1px solid var(--ul-line);
+  font-size: var(--ul-text-xs);
+}
+.auto-history-list > li:first-child { border-top: 0; }
+.auto-when { flex: none; color: var(--ul-muted); min-width: 8em; }
+.auto-hist-rule { flex: none; color: var(--ul-accent); }
+.auto-hist-move { min-width: 0; color: var(--ul-body); overflow-wrap: anywhere; }
+
+/* ---- the builders -------------------------------------------------------- */
+
+/* The rule or job as a sentence, rewritten on every keystroke — what is being
+ * built is legible before it is saved. */
+.builder-sentence {
+  margin: var(--ul-space-3) var(--ul-space-4);
+  padding: var(--ul-space-3);
+  background: var(--ul-accent-wash);
+  border-left: 2px solid var(--ul-accent);
+  border-radius: var(--ul-radius-sm);
+}
+.builder-then { margin-top: var(--ul-space-4); }
+.drawer-scroll > .auto-sentence,
+.drawer-scroll > .builder-enable,
+.drawer-scroll > .label { margin-left: var(--ul-space-4); margin-right: var(--ul-space-4); }
+.builder-enable { margin: var(--ul-space-3) var(--ul-space-4); }
+.builder-enable .toggle { align-items: flex-start; }
+
+.cond-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+  padding: 0 var(--ul-space-4) var(--ul-space-2);
+}
+.cond-row select { flex: none; min-width: 11em; font-size: var(--ul-text-sm); }
+.cond-row input { flex: 1; min-width: 8em; font-size: var(--ul-text-sm); }
+.cond-row .btn { flex: none; }
+
+@media (max-width: 760px) {
+  .automation-view, .extend-view { padding: var(--ul-space-4) 0; }
+  .auto-row-head { flex-direction: column; }
+  .auto-row-actions { width: 100%; }
+  .cond-row select, .cond-row input { flex: 1 1 100%; min-width: 0; }
+}
 
 /* ---- today --------------------------------------------------------------- */
 

@@ -111,6 +111,19 @@ CREATE TABLE IF NOT EXISTS mentions(
     created_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS mentions_user ON mentions(username, read);
+CREATE TABLE IF NOT EXISTS rules(
+    name TEXT PRIMARY KEY, spec TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rule_runs(
+    id INTEGER PRIMARY KEY, ran_at TEXT NOT NULL, rule TEXT NOT NULL,
+    action TEXT NOT NULL, path TEXT NOT NULL, target TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS jobs(
+    name TEXT PRIMARY KEY, spec TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+    last_run TEXT NOT NULL DEFAULT '', last_status TEXT NOT NULL DEFAULT '',
+    last_detail TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ext_disabled(
     kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (kind, name)
 );
@@ -472,6 +485,73 @@ class Store:
                     (username, channel_id),
                 )
         return cur.rowcount
+
+    # -- rules and jobs ---------------------------------------------------
+    def list_rules(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT name, spec, position FROM rules ORDER BY position, name"
+        ).fetchall()
+
+    def upsert_rule(self, name: str, spec: str, position: int = 0) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO rules(name, spec, position, updated_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET spec=excluded.spec, "
+                "position=excluded.position, updated_at=excluded.updated_at",
+                (name, spec, position, _now()),
+            )
+
+    def delete_rule(self, name: str) -> bool:
+        with self.db:
+            cur = self.db.execute("DELETE FROM rules WHERE name=?", (name,))
+        return cur.rowcount > 0
+
+    def record_rule_actions(self, actions: list[dict]) -> None:
+        if not actions:
+            return
+        stamp = _now()
+        with self.db:
+            self.db.executemany(
+                "INSERT INTO rule_runs(ran_at, rule, action, path, target) VALUES(?,?,?,?,?)",
+                [
+                    (stamp, a["rule"], a["action"], a["path"], a.get("target", ""))
+                    for a in actions
+                ],
+            )
+
+    def rule_history(self, limit: int = 100) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT ran_at, rule, action, path, target FROM rule_runs "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    def list_jobs(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT name, spec, enabled, last_run, last_status, last_detail "
+            "FROM jobs ORDER BY name"
+        ).fetchall()
+
+    def upsert_job(self, name: str, spec: str, enabled: bool) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO jobs(name, spec, enabled, updated_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET spec=excluded.spec, "
+                "enabled=excluded.enabled, updated_at=excluded.updated_at",
+                (name, spec, int(enabled), _now()),
+            )
+
+    def delete_job(self, name: str) -> bool:
+        with self.db:
+            cur = self.db.execute("DELETE FROM jobs WHERE name=?", (name,))
+        return cur.rowcount > 0
+
+    def record_job_run(self, name: str, status: str, detail: str) -> None:
+        with self.db:
+            self.db.execute(
+                "UPDATE jobs SET last_run=?, last_status=?, last_detail=? WHERE name=?",
+                (_now(), status, detail[:500], name),
+            )
 
     # -- extensions -------------------------------------------------------
     def is_disabled(self, kind: str, name: str) -> bool:

@@ -179,6 +179,136 @@ export interface ExtensionList {
   mcp_errors: string[];
 }
 
+/**
+ * `GET /api/extensions/library` — ready-made skills, so an empty Skills
+ * section offers something to add rather than an empty list.
+ */
+export interface LibrarySkill {
+  name: string;
+  description: string;
+  instructions: string;
+  installed: boolean;
+}
+
+export interface LibraryConnector {
+  name: string;
+  description: string;
+  /** "builtin" already ships; "template" writes starter code into the brain. */
+  kind: string;
+  settings: Record<string, unknown>;
+  installed: boolean;
+}
+
+export interface SkillLibrary {
+  skills: LibrarySkill[];
+  connectors: LibraryConnector[];
+}
+
+/** One condition of a rule: `tag` matches `recipe`. */
+export interface RuleMatch {
+  kind: string;
+  value: string;
+}
+
+/** What a rule does once every condition holds. Never a delete. */
+export interface RuleAction {
+  kind: string;
+  value: string;
+}
+
+/**
+ * `GET /api/rules`. `describes` is the sentence the panel renders — the
+ * parts are only there for the builder. A rule whose stored spec no longer
+ * parses comes back as a name and an `error`, and nothing else.
+ */
+export interface Rule {
+  name: string;
+  vault?: string;
+  matches?: RuleMatch[];
+  action?: RuleAction;
+  enabled?: boolean;
+  describes?: string;
+  error?: string;
+}
+
+export interface RuleList {
+  rules: Rule[];
+  /** ready-made rules, all `enabled: false` */
+  suggested: Rule[];
+  match_kinds: string[];
+  action_kinds: string[];
+}
+
+/** One line of `GET /api/rules/preview` — what a run would do, undone. */
+export interface PlannedAction {
+  path: string;
+  rule: string;
+  action: string;
+  target: string;
+}
+
+export interface RulePreview {
+  planned: PlannedAction[];
+  count: number;
+}
+
+/** `POST /api/rules/apply`. `action: "error"` carries its reason in `target`. */
+export interface AppliedAction {
+  rule: string;
+  action: string;
+  path: string;
+  target: string;
+}
+
+export interface RuleApply {
+  actions: AppliedAction[];
+  count: number;
+}
+
+/** `GET /api/rules/history` — where a note went, and when. */
+export interface RuleRun {
+  at: string;
+  rule: string;
+  action: string;
+  path: string;
+  target: string;
+}
+
+/**
+ * What a job *is*: a kind, an interval in hours (never a cron string) and
+ * whatever settings that kind needs. The suggested jobs arrive as this and
+ * nothing more — they have never run.
+ */
+export interface JobSpec {
+  name: string;
+  kind: string;
+  interval_hours: number;
+  settings: Record<string, unknown>;
+  enabled: boolean;
+  describes?: string;
+}
+
+/** A saved job, which also carries how its last run went. */
+export interface Job extends JobSpec {
+  last_run: string;
+  last_status: string;
+  last_detail: string;
+}
+
+export interface JobList {
+  jobs: Job[];
+  /** ready-made jobs, all `enabled: false` */
+  suggested: JobSpec[];
+  kinds: string[];
+  connectors: string[];
+}
+
+export interface JobRun {
+  name: string;
+  status: string;
+  detail: string;
+}
+
 export type WsEvent =
   | { type: "channel_message"; channel_id: string; message: ChannelMessage }
   | { type: "agent_partial"; channel_id: string; message_id: string; text: string }

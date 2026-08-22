@@ -398,3 +398,140 @@ def test_demo_content_endpoint(client, brain):
 def test_demo_is_admin_only(client):
     signin(client, "sam")
     assert client.post("/api/demo").status_code == 403
+
+
+def test_rules_crud_preview_and_apply(client, brain):
+    signin(client, "erwin")
+    (brain.config.shared_vault / "shakshuka.md").write_text("#recipe\n", encoding="utf-8")
+
+    listing = client.get("/api/rules").json()
+    assert listing["rules"] == [] and len(listing["suggested"]) >= 3
+    assert "delete" not in listing["action_kinds"]
+
+    saved = client.put("/api/rules", json={"rule": {
+        "name": "file recipes",
+        "matches": [{"kind": "tag", "value": "recipe"}],
+        "action": {"kind": "move", "value": "recipes"},
+    }})
+    assert saved.status_code == 200
+    assert saved.json()["describes"] == "tag matches 'recipe' → move into recipes/"
+
+    # preview changes nothing
+    preview = client.get("/api/rules/preview").json()
+    assert preview["count"] == 1
+    assert (brain.config.shared_vault / "shakshuka.md").is_file()
+
+    applied = client.post("/api/rules/apply").json()
+    assert applied["count"] == 1
+    assert (brain.config.shared_vault / "recipes" / "shakshuka.md").is_file()
+    assert client.get("/api/rules/history").json()["history"][0]["path"] == "shakshuka.md"
+    assert client.delete("/api/rules/file recipes").json()["ok"] is True
+
+
+def test_rules_reject_a_destination_outside_the_vault(client):
+    signin(client, "erwin")
+    res = client.put("/api/rules", json={"rule": {
+        "name": "escape",
+        "matches": [{"kind": "path", "value": "*.md"}],
+        "action": {"kind": "move", "value": "../../etc"},
+    }})
+    assert res.status_code == 422 and "climb out" in res.json()["detail"]
+
+
+def test_jobs_crud_and_run_now(client, brain):
+    signin(client, "erwin")
+    listing = client.get("/api/jobs").json()
+    assert listing["jobs"] == [] and len(listing["suggested"]) >= 3
+    assert "index" in listing["kinds"]
+
+    saved = client.put("/api/jobs", json={"job": {
+        "name": "nightly tidy", "kind": "rules", "interval_hours": 24,
+        "settings": {"dry_run": True},
+    }})
+    assert saved.status_code == 200
+    assert saved.json()["describes"] == "preview the tidying rules daily"
+
+    ran = client.post("/api/jobs/nightly tidy/run").json()
+    assert ran["status"] == "ok"
+    assert "would be made" in ran["detail"]
+    assert client.get("/api/jobs").json()["jobs"][0]["last_status"] == "ok"
+    assert client.delete("/api/jobs/nightly tidy").json()["ok"] is True
+
+
+def test_a_digest_job_writes_a_note(client, brain):
+    signin(client, "erwin")
+    (brain.config.shared_vault / "t.md").write_text("- [ ] a real task\n", encoding="utf-8")
+    client.put("/api/jobs", json={"job": {
+        "name": "briefing", "kind": "digest", "settings": {"vault": "shared"},
+    }})
+    ran = client.post("/api/jobs/briefing/run").json()
+    assert ran["status"] == "ok" and "briefings/" in ran["detail"]
+    written = list((brain.config.shared_vault / "briefings").glob("*.md"))
+    assert written and "a real task" in written[0].read_text()
+
+
+def test_an_empty_channel_digest_posts_nothing(client, brain):
+    """A scheduled 'nothing to report' is what teaches people to ignore a channel."""
+    signin(client, "erwin")
+    client.put("/api/jobs", json={"job": {
+        "name": "morning", "kind": "channel_digest", "settings": {"channel": "general"},
+    }})
+    ran = client.post("/api/jobs/morning/run").json()
+    assert ran["status"] == "ok" and "nothing was posted" in ran["detail"]
+    cid = client.get("/api/channels").json()["channels"][0]["id"]
+    assert client.get(f"/api/channels/{cid}/messages").json()["messages"] == []
+
+
+def test_rules_and_jobs_are_admin_only(client):
+    signin(client, "sam")
+    assert client.get("/api/rules").status_code == 403
+    assert client.get("/api/jobs").status_code == 403
+    assert client.post("/api/rules/apply").status_code == 403
+
+
+def test_skill_library_lists_and_installs(client, brain):
+    signin(client, "erwin")
+    lib = client.get("/api/extensions/library").json()["skills"]
+    assert len(lib) >= 5
+    assert all(not s["installed"] for s in lib)
+    assert all(s["description"] and s["instructions"] for s in lib)
+
+    installed = client.post("/api/extensions/library/skill/weekly-review")
+    assert installed.status_code == 200
+    again = client.get("/api/extensions/library").json()["skills"]
+    assert next(s for s in again if s["name"] == "weekly-review")["installed"] is True
+    # and it is a real skill the agent can now reach
+    names = [s["name"] for s in client.get("/api/extensions").json()["skills"]]
+    assert "weekly-review" in names
+    assert client.post("/api/extensions/library/skill/nope").status_code == 404
+
+
+def test_connector_library_lists_and_installs(client, brain):
+    signin(client, "erwin")
+    lib = client.get("/api/extensions/library").json()
+    names = {c["name"]: c for c in lib["connectors"]}
+    assert {"calendar_ics", "rss"} <= set(names)
+    assert names["calendar_ics"]["kind"] == "builtin"
+    assert names["rss"]["kind"] == "template"
+    assert not any(c["installed"] for c in lib["connectors"])
+
+    # a template writes real, loadable code into the brain
+    added = client.post("/api/extensions/library/connector/rss")
+    assert added.status_code == 200
+    assert (brain.config.connectors_dir / "rss.py").is_file()
+    listed = {c["name"]: c for c in client.get("/api/extensions").json()["connectors"]}
+    assert "rss" in listed and not listed["rss"]["error"]
+
+    # a built-in just gets its settings seeded
+    client.post("/api/extensions/library/connector/calendar_ics")
+    again = {c["name"]: c for c in client.get("/api/extensions/library").json()["connectors"]}
+    assert again["rss"]["installed"] and again["calendar_ics"]["installed"]
+    assert client.post("/api/extensions/library/connector/nope").status_code == 404
+
+
+def test_suggestions_carry_their_own_sentence(client):
+    signin(client, "erwin")
+    for rule in client.get("/api/rules").json()["suggested"]:
+        assert rule["describes"]
+    for job in client.get("/api/jobs").json()["suggested"]:
+        assert job["describes"]

@@ -33,6 +33,9 @@ from pydantic import BaseModel
 from cortex import auth, capture, extensions, scope, vaults
 from cortex import demo as demomod
 from cortex import digest as digestmod
+from cortex import jobs as jobsmod
+from cortex import library as librarymod
+from cortex import rules as rulesmod
 from cortex.brain import Brain
 from cortex.events import AgentEvent
 from cortex.memory.search import hybrid_search
@@ -118,6 +121,14 @@ class MentionsRead(BaseModel):
     channel_id: int | None = None
 
 
+class RuleBody(BaseModel):
+    rule: dict
+
+
+class JobBody(BaseModel):
+    job: dict
+
+
 # -- websocket fan-out ------------------------------------------------------
 
 
@@ -173,11 +184,13 @@ def build_app(brain: Brain) -> FastAPI:
         state["runtime"] = runtime
         worker = asyncio.create_task(_reindex_worker())
         schedule = asyncio.create_task(_connector_worker())
+        clock = asyncio.create_task(_job_worker())
         try:
             yield
         finally:
             worker.cancel()
             schedule.cancel()
+            clock.cancel()
             await runtime.__aexit__(None, None, None)
             brain.close()
 
@@ -205,6 +218,107 @@ def build_app(brain: Brain) -> FastAPI:
                 await ws_manager.broadcast(
                     {"type": "index_done", "stats": brain.store.stats()}
                 )
+
+    def _load_rules() -> list:
+        out = []
+        for row in brain.store.list_rules():
+            try:
+                out.append(rulesmod.parse_rule(json.loads(row["spec"])))
+            except (rulesmod.RuleError, ValueError):
+                continue
+        return out
+
+    def _load_jobs() -> list:
+        out = []
+        for row in brain.store.list_jobs():
+            try:
+                job = jobsmod.parse_job(json.loads(row["spec"]))
+            except (jobsmod.JobError, ValueError):
+                continue
+            job.enabled = bool(row["enabled"])
+            job.last_run = row["last_run"]
+            job.last_status = row["last_status"]
+            job.last_detail = row["last_detail"]
+            out.append(job)
+        return out
+
+    async def _run_job(job) -> tuple[str, str]:
+        """Execute one job. Returns (status, human-readable detail)."""
+        from cortex.connectors import run_connectors
+        from cortex.memory.indexer import run_index
+
+        if job.kind == "connector":
+            name = job.settings.get("connector", "")
+            settings = extensions.effective_connectors(brain.config, brain.store)
+            results = await asyncio.to_thread(run_connectors, brain.config, settings, name)
+            outcome = results.get(name, "connector not found or disabled")
+            reindex_wanted.set()
+            return ("ok" if outcome == "ok" else "error", outcome)
+
+        if job.kind == "index":
+            report = await run_index(brain.config, brain.store, brain.embedder())
+            return ("ok", f"indexed {report.indexed}, removed {report.removed}")
+
+        if job.kind == "rules":
+            rules = _load_rules()
+            if job.settings.get("dry_run"):
+                planned = await asyncio.to_thread(rulesmod.plan, brain.config, rules)
+                return ("ok", f"{len(planned)} changes would be made")
+            actions = await asyncio.to_thread(rulesmod.apply, brain.config, rules)
+            brain.store.record_rule_actions(actions)
+            if actions:
+                reindex_wanted.set()
+                await ws_manager.broadcast({"type": "rules_ran", "count": len(actions)})
+            errors = sum(1 for a in actions if a["action"] == "error")
+            detail = f"{len(actions) - errors} filed" + (f", {errors} failed" if errors else "")
+            return ("error" if errors else "ok", detail)
+
+        if job.kind in ("digest", "channel_digest"):
+            vault = job.settings.get("vault", "shared")
+            built = digestmod.build_digest(brain.config, brain.store, vault=vault)
+            text = digestmod.format_digest(built)
+            if job.kind == "digest":
+                rel = f"briefings/{built.day}.md"
+                target = vaults.vault_path(brain.config, vault, rel)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text + "\n", encoding="utf-8")
+                await _after_write(vault, rel)
+                return ("ok", f"wrote vaults/{vault}/{rel}")
+            # An empty digest posts nothing. A scheduled message that says
+            # "nothing to report" is exactly what teaches people to ignore
+            # the channel it arrives in.
+            if built.is_empty():
+                return ("ok", "nothing on today, so nothing was posted")
+            channel_name = job.settings.get("channel", "general")
+            channel_id = brain.store.ensure_channel(channel_name, "cortex")
+            message_id, at = brain.store.add_channel_message(channel_id, "cortex", text)
+            await ws_manager.broadcast({
+                "type": "channel_message",
+                "channel_id": channel_id,
+                "message": {"id": message_id, "author": "cortex", "body": text, "at": at},
+            })
+            return ("ok", f"posted into #{channel_name}")
+
+        return ("error", f"unknown job kind {job.kind}")
+
+    async def _job_worker() -> None:
+        """The clock. Checks every minute for work that is due."""
+        await asyncio.sleep(8)
+        while True:
+            try:
+                for job in _load_jobs():
+                    if not job.due():
+                        continue
+                    try:
+                        status, detail = await _run_job(job)
+                    except Exception as exc:  # noqa: BLE001 - one bad job, not the loop
+                        status, detail = "error", str(exc)
+                    brain.store.record_job_run(job.name, status, detail)
+                    if status != "ok":
+                        print(f"job {job.name}: {detail}", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001
+                print(f"scheduler error: {exc}", file=sys.stderr)
+            await asyncio.sleep(60)
 
     async def _connector_worker() -> None:
         """Run connectors that ask for a schedule.
@@ -803,6 +917,64 @@ def build_app(brain: Brain) -> FastAPI:
         payload["mcp_errors"] = getattr(state["runtime"], "mcp_errors", [])
         return payload
 
+    @app.get("/api/extensions/library")
+    def extensions_library(user: dict = Depends(admin_user)) -> dict:
+        """Ready-made skills, so an empty section offers something to add
+        rather than an empty list and a blank editor."""
+        installed = {s.name for s in brain.skills}
+        existing = {
+            c["name"] for c in extensions.list_all(brain.config, brain.store)["connectors"]
+        }
+        configured = extensions.effective_connectors(brain.config, brain.store)
+        return {
+            "skills": [
+                {**skill, "installed": skill["name"] in installed}
+                for skill in librarymod.as_dicts()
+            ],
+            "connectors": [
+                {
+                    **conn,
+                    # a built-in exists already; "installed" for it means
+                    # somebody has actually configured it
+                    "installed": (
+                        bool(configured.get(conn["name"]))
+                        if conn["kind"] == "builtin"
+                        else conn["name"] in existing
+                    ),
+                }
+                for conn in librarymod.connectors_as_dicts()
+            ],
+        }
+
+    @app.post("/api/extensions/library/skill/{name}")
+    async def install_library_skill(name: str, user: dict = Depends(admin_user)) -> dict:
+        skill = librarymod.get(name)
+        if skill is None:
+            raise HTTPException(status_code=404, detail="no such library skill")
+        extensions.write_skill(
+            brain.config, skill.name, skill.description, skill.instructions
+        )
+        await _reload_agent()
+        return {"name": skill.name}
+
+    @app.post("/api/extensions/library/connector/{name}")
+    async def install_library_connector(
+        name: str, user: dict = Depends(admin_user)
+    ) -> dict:
+        """Add a ready-made connector: seed a built-in's settings, or write
+        a template's starter code into the brain."""
+        conn = librarymod.get_connector(name)
+        if conn is None:
+            raise HTTPException(status_code=404, detail="no such library connector")
+        try:
+            if conn.kind == "template":
+                extensions.write_connector(brain.config, conn.name, conn.code)
+            extensions.set_connector_settings(brain.store, conn.name, dict(conn.settings))
+        except extensions.ExtensionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _reload_agent()
+        return {"name": conn.name, "kind": conn.kind, "settings": conn.settings}
+
     @app.get("/api/extensions/scaffold")
     def extensions_scaffold(kind: str, user: dict = Depends(admin_user)) -> dict:
         try:
@@ -894,6 +1066,103 @@ def build_app(brain: Brain) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         await _reload_agent()
         return {"ok": True}
+
+    # -- rules and scheduled jobs (admin only) ------------------------------
+    #
+    # Rules move someone's writing, so: preview is always available, there
+    # is no delete action, and every applied change is logged.
+
+    @app.get("/api/rules")
+    def list_rules(user: dict = Depends(admin_user)) -> dict:
+        rules = []
+        for row in brain.store.list_rules():
+            try:
+                rules.append(rulesmod.rule_to_dict(rulesmod.parse_rule(json.loads(row["spec"]))))
+            except (rulesmod.RuleError, ValueError) as exc:
+                rules.append({"name": row["name"], "error": str(exc)})
+        return {
+            "rules": rules,
+            "suggested": rulesmod.suggested_rules(),
+            "match_kinds": list(rulesmod.MATCH_KINDS),
+            "action_kinds": list(rulesmod.ACTION_KINDS),
+        }
+
+    @app.put("/api/rules")
+    def save_rule(body: RuleBody, user: dict = Depends(admin_user)) -> dict:
+        try:
+            rule = rulesmod.parse_rule(body.rule)
+        except rulesmod.RuleError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        brain.store.upsert_rule(rule.name, json.dumps(rulesmod.rule_to_dict(rule)))
+        return rulesmod.rule_to_dict(rule)
+
+    @app.delete("/api/rules/{name}")
+    def delete_rule(name: str, user: dict = Depends(admin_user)) -> dict:
+        if not brain.store.delete_rule(name):
+            raise HTTPException(status_code=404, detail="no such rule")
+        return {"ok": True}
+
+    @app.get("/api/rules/preview")
+    async def preview_rules(user: dict = Depends(admin_user)) -> dict:
+        """Exactly what a run would do, without doing any of it."""
+        planned = await asyncio.to_thread(rulesmod.plan, brain.config, _load_rules())
+        return {"planned": [p.as_dict() for p in planned], "count": len(planned)}
+
+    @app.post("/api/rules/apply")
+    async def apply_rules(user: dict = Depends(admin_user)) -> dict:
+        actions = await asyncio.to_thread(rulesmod.apply, brain.config, _load_rules())
+        brain.store.record_rule_actions(actions)
+        if actions:
+            reindex_wanted.set()
+        return {"actions": actions, "count": len(actions)}
+
+    @app.get("/api/rules/history")
+    def rules_history(user: dict = Depends(admin_user)) -> dict:
+        return {
+            "history": [
+                {"at": r["ran_at"], "rule": r["rule"], "action": r["action"],
+                 "path": r["path"], "target": r["target"]}
+                for r in brain.store.rule_history()
+            ]
+        }
+
+    @app.get("/api/jobs")
+    def list_jobs(user: dict = Depends(admin_user)) -> dict:
+        return {
+            "jobs": [j.as_dict() for j in _load_jobs()],
+            "suggested": jobsmod.suggested_jobs(),
+            "kinds": list(jobsmod.JOB_KINDS),
+            "connectors": sorted(
+                extensions.effective_connectors(brain.config, brain.store)
+            ),
+        }
+
+    @app.put("/api/jobs")
+    def save_job(body: JobBody, user: dict = Depends(admin_user)) -> dict:
+        try:
+            job = jobsmod.parse_job(body.job)
+        except jobsmod.JobError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        brain.store.upsert_job(job.name, json.dumps(job.as_dict()), job.enabled)
+        return job.as_dict()
+
+    @app.delete("/api/jobs/{name}")
+    def delete_job(name: str, user: dict = Depends(admin_user)) -> dict:
+        if not brain.store.delete_job(name):
+            raise HTTPException(status_code=404, detail="no such job")
+        return {"ok": True}
+
+    @app.post("/api/jobs/{name}/run")
+    async def run_job_now(name: str, user: dict = Depends(admin_user)) -> dict:
+        job = next((j for j in _load_jobs() if j.name == name), None)
+        if job is None:
+            raise HTTPException(status_code=404, detail="no such job")
+        try:
+            status, detail = await _run_job(job)
+        except Exception as exc:  # noqa: BLE001 - report it, do not 500
+            status, detail = "error", str(exc)
+        brain.store.record_job_run(name, status, detail)
+        return {"name": name, "status": status, "detail": detail}
 
     # -- admin ------------------------------------------------------------
 

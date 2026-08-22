@@ -10,6 +10,7 @@ import Channels from "./views/Channels";
 import Vault from "./views/Vault";
 import ImportView from "./views/ImportView";
 import Extend from "./views/Extend";
+import Automation from "./views/Automation";
 import Admin from "./views/Admin";
 import CaptureBox from "./components/CaptureBox";
 import HealthBanner from "./components/HealthBanner";
@@ -23,6 +24,7 @@ export type Tab =
   | "vault"
   | "import"
   | "extend"
+  | "automation"
   | "admin";
 
 export interface VaultTarget {
@@ -44,6 +46,7 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "vault", label: "Vault" },
   { id: "import", label: "Import" },
   { id: "extend", label: "Extend", adminOnly: true },
+  { id: "automation", label: "Automation", adminOnly: true },
   { id: "admin", label: "Admin", adminOnly: true },
 ];
 
@@ -287,6 +290,16 @@ export default function App() {
           aria-labelledby="tab-extend"
         >
             <Extend active={tab === "extend"} />
+          </div>
+        )}
+        {isAdmin && (
+          <div
+          className={tab === "automation" ? "view" : "view hidden"}
+          role="tabpanel"
+          id="panel-automation"
+          aria-labelledby="tab-automation"
+        >
+            <Automation active={tab === "automation"} />
           </div>
         )}
         {isAdmin && (
