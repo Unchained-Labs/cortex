@@ -6,6 +6,13 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-22
+
+The release that gives cortex a reason to be opened tomorrow. Everything
+here came out of two reviews — a browser-driven usability audit and a
+product review — and most of it is the answer to one finding: the
+retrieval was good and nothing brought you back.
+
 ### Added
 
 - **Today** — a default view answering "what is on", computed without the
@@ -159,6 +166,7 @@ the CLI stay `cortex`.
 - The calendar connector does not expand recurrence rules yet.
 - Cortex hosts no model; you bring an endpoint.
 
-[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.0
