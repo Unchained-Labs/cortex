@@ -65,6 +65,7 @@ calendar connector expands no recurrence rules yet.
 - **Import** — bring an existing Obsidian vault as a zip upload, a git URL,
   or a server path. `.obsidian/`, `.git/` and non-vault file types are
   skipped.
+- **Automation** — rules and scheduled jobs (below).
 - **Admin** — accounts (`admin` / `member`), index and model health, and a
   way to re-index without a terminal.
 
@@ -116,6 +117,29 @@ The index rebuilds from scratch when the chunk schema *or* embedding model
 changes, because silently mixing vector spaces is corruption. No embedding
 endpoint means full-text search that says so, not fake vector scores.
 
+## Things it does without being asked
+
+**Rules** file notes for you. A rule matches on path, tag, frontmatter,
+content or age, then moves, tags or archives. Because this moves your
+writing, the shape is constrained on purpose:
+
+- there is **no delete action**, and there will not be one
+- **preview is free and comes first** — you see which note goes where before
+  anything moves
+- **every change is logged**, so "where did my note go" always has an answer
+
+**Jobs** are the clock: sync a connector, re-index, run the rules, write
+today's digest into a note, or post it into a channel. Intervals are hours
+in plain words rather than cron, and each job says what it is: *"apply the
+tidying rules daily"*. Both ship a set of ready-made suggestions, all
+switched off until you read one and turn it on.
+
+Two things deliberately absent. There is no "ask the model something and
+notify me" job — every job is declared and deterministic, producing a fact
+rather than an opinion. And a channel digest with nothing in it posts
+nothing: a scheduled "nothing to report" is what teaches people to ignore
+the channel it arrives in.
+
 ## Four ways to extend it
 
 | Extension | Contract | Runs |
@@ -132,7 +156,9 @@ checks inside the callable.
 **Manage them from the dashboard.** The admin-only **Extend** panel lists
 every plugin, skill, connector and MCP server with what it provides, its
 load error if it has one, and an enable toggle that never edits your source
-file. You can write a plugin or connector in the browser: it is loaded
+file. Skills and connectors also carry a **library** of ready-made ones you
+add in a click — six skills and an RSS connector ship — because most people
+want the one that already does the thing, not a blank editor. You can write a plugin or connector in the browser: it is loaded
 before it is saved, so code that will not import is refused with the
 loader's own message instead of silently breaking the next turn, and a
 successful save rebuilds the agent so the new tool is live without a

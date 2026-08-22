@@ -27,6 +27,7 @@
       <a href="#dashboard">Dashboard</a>
       <a href="#stack">Stack</a>
       <a href="#extend">Extend</a>
+      <a href="#automation">Automation</a>
       <a href="#restraint">Restraint</a>
       <a href="https://github.com/Unchained-Labs/cortex">GitHub</a>
     </nav>
@@ -42,7 +43,7 @@
     <p class="lead">Capture a thought in one keystroke, ask about it later and get a cited answer, and see what is on today — all on a model you run yourself. Shared and personal vaults, peer chat, Obsidian-style editing. Home brain, company brain, club brain: one folder each.</p>
     <ul class="badges">
       <li class="badge warn">alpha</li>
-      <li class="badge up">138 tests passing</li>
+      <li class="badge up">164 tests passing</li>
       <li class="badge">LangGraph + LangChain</li>
       <li class="badge">Python 3.11+ · React 18</li>
       <li class="badge">MIT</li>
@@ -222,6 +223,28 @@ roles:
       <p>Saving a plugin or connector runs that code on the server as the cortex user — the
       same trust level as configuring a stdio MCP server. That is why the panel is admin-only.
       <code>cortex ext list|enable|disable|delete</code> does the same from a terminal.</p>
+    </div>
+  </div>
+</section>
+
+<section id="automation">
+  <div class="wrap">
+    <p class="label">Automation</p>
+    <h2>What it does while you are not looking</h2>
+    <p class="narrow"><strong>Rules</strong> file notes for you: match on path, tag,
+    frontmatter, content or age, then move, tag or archive. This moves your writing, so the
+    shape is constrained on purpose — there is <strong>no delete action</strong>,
+    <strong>preview is free and comes before apply</strong> so you see which note goes where
+    first, and every change is logged under a heading that reads "where your notes went".</p>
+    <p class="narrow"><strong>Jobs</strong> are the clock: sync a connector, re-index, run the
+    rules, write today's digest into a note, or post it into a channel. Intervals are plain
+    words rather than cron, and each job says what it is — <em>apply the tidying rules
+    daily</em>. Both ship ready-made suggestions, all switched off until you turn one on.</p>
+    <div class="note">
+      <p>There is no "ask the model something and notify me" job. Every job is declared and
+      deterministic, producing a fact rather than an opinion — and a channel digest with
+      nothing in it posts nothing, because a scheduled "nothing to report" is what teaches
+      people to ignore the channel it arrives in.</p>
     </div>
   </div>
 </section>
