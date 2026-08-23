@@ -84,6 +84,10 @@ class BrainConfig:
         return self.root / "sources"
 
     @property
+    def templates_dir(self) -> Path:
+        return self.root / "templates"
+
+    @property
     def skills_dir(self) -> Path:
         return self.root / "skills"
 

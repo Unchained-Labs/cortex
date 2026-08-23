@@ -158,6 +158,31 @@ export interface MemoryList {
   memories: Memory[];
 }
 
+/**
+ * `GET /api/templates` — a shape to start a note from. `title` is the
+ * human name (frontmatter `name:`), `target` the path pattern its notes
+ * land at, and `body` the markdown *after* the frontmatter — the server
+ * strips it on read, so an editor recomposes it from `title`/`target`.
+ */
+export interface NoteTemplate {
+  name: string;
+  title: string;
+  target: string;
+  body: string;
+}
+
+export interface TemplateList {
+  templates: NoteTemplate[];
+  /** placeholder names, without the braces: date, slug, title, … */
+  placeholders: string[];
+}
+
+/** `POST /api/templates/new-note` — where the note landed. */
+export interface NewNoteResult {
+  vault: string;
+  path: string;
+}
+
 export interface AdminUser {
   username: string;
   role: string;

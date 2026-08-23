@@ -288,7 +288,7 @@ export default function App() {
           id="panel-vault"
           aria-labelledby="tab-vault"
         >
-          <Vault target={vaultTarget} importNonce={importNonce} />
+          <Vault target={vaultTarget} importNonce={importNonce} isAdmin={isAdmin} />
         </div>
         {isAdmin && (
           <div

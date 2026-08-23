@@ -106,6 +106,29 @@ same trust level as a stdio MCP server. The UI must say this where code is edite
   then a re-index is queued.
 - `DELETE /api/extensions/{kind}/{name}` → `{ok}`. 422 for a cortex.yaml-defined MCP server.
 
+### Note templates
+
+A template is a markdown file under `templates/` with optional frontmatter naming
+where its notes land (`name:` and `target:`). Placeholders are deliberately few —
+`{{title}} {{slug}} {{date}} {{time}} {{datetime}} {{user}}` — and an unknown one is
+left visible rather than blanked, so a typo looks wrong instead of losing a line.
+Reading and using templates is open to any user; editing the shared set is admin-only.
+
+- `GET /api/templates` → `{templates: [{name, title, target, body, raw}], placeholders}`.
+  **`body` is the frontmatter-stripped body for rendering; `raw` is the file as written.**
+  An editor must round-trip `raw` — `PUT` writes the whole file, so saving `body` back
+  would delete the frontmatter and silently relocate every future note from that
+  template.
+- `POST /api/templates/new-note {template, vault, title}` → `{vault, path}`.
+  **422 if the note already exists** — a template starts something, it never
+  overwrites. 404 for an unknown template or a vault the caller may not write.
+- `PUT /api/templates {name, body}` (admin) → the saved template, 422 on a bad name.
+- `DELETE /api/templates/{name}` (admin).
+- `POST /api/templates/install` (admin) → `{written: [name, …]}`, the names actually
+  written; the starter set never clobbers an edited file, so a second call returns `[]`.
+- `PUT` slugifies the name it is given (`My Notes` → `my-notes`) and returns the name it
+  used — show that back rather than assuming what was typed.
+
 ### Memory (any signed-in user)
 
 What the brain remembers, typed. Kinds: `person`, `project`, `preference`, `goal`,
@@ -202,6 +225,14 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
+
+### Templates in the Vault (v0.4)
+
+The Vault view gains **New from template** beside its existing new-file action: pick a
+template, type a title, and the note is created where the template's `target` says and
+opened. Show the target pattern so it is obvious where it will land. An admin also gets
+a template editor (list, edit body, delete, and an "add the starter set" action) — put
+it wherever it sits most naturally, but not behind a new top-level tab.
 
 ### Memory (v0.4, any user)
 

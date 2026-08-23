@@ -574,3 +574,65 @@ def test_memory_rejects_nonsense(client):
         "/api/memory", json={"body": "x", "kind": "enemy"}
     ).status_code == 422
     assert client.get("/api/memory", params={"kind": "enemy"}).status_code == 422
+
+
+def test_templates_list_install_and_make_a_note(client, brain):
+    signin(client, "erwin")
+    assert client.get("/api/templates").json()["templates"] == []
+
+    installed = client.post("/api/templates/install").json()["written"]
+    assert "meeting" in installed
+    listing = client.get("/api/templates").json()
+    assert len(listing["templates"]) >= 4
+    assert "title" in listing["placeholders"] and "date" in listing["placeholders"]
+
+    made = client.post("/api/templates/new-note", json={
+        "template": "meeting", "vault": "shared", "title": "Kitchen rota",
+    })
+    assert made.status_code == 200
+    rel = made.json()["path"]
+    assert rel.startswith("meetings/") and rel.endswith("kitchen-rota.md")
+    assert "# Kitchen rota" in (brain.config.shared_vault / rel).read_text()
+
+    # the same note twice is a mistake, not an overwrite
+    again = client.post("/api/templates/new-note", json={
+        "template": "meeting", "vault": "shared", "title": "Kitchen rota",
+    })
+    assert again.status_code == 422 and "already exists" in again.json()["detail"]
+    assert client.post("/api/templates/new-note", json={
+        "template": "ghost", "title": "x",
+    }).status_code == 404
+
+
+def test_members_can_use_templates_but_not_edit_them(client, brain):
+    signin(client, "erwin")
+    client.post("/api/templates/install")
+    client.post("/api/auth/logout")
+
+    signin(client, "sam")
+    assert len(client.get("/api/templates").json()["templates"]) >= 4
+    made = client.post("/api/templates/new-note", json={
+        "template": "person", "vault": "sam", "title": "Priya Okonkwo",
+    })
+    assert made.status_code == 200
+    # editing the shared set is an admin job
+    assert client.put(
+        "/api/templates", json={"name": "mine", "body": "# x"}
+    ).status_code == 403
+    assert client.post("/api/templates/install").status_code == 403
+
+
+def test_a_member_cannot_write_into_someone_elses_vault(client):
+    signin(client, "sam")
+    assert client.post("/api/templates/new-note", json={
+        "template": "person", "vault": "erwin", "title": "x",
+    }).status_code == 404
+
+
+def test_memory_kinds_come_back_in_a_useful_order(client):
+    """The server owns the ordering so no client reimplements it."""
+    signin(client, "erwin")
+    for kind in ("fact", "goal", "person", "project"):
+        client.post("/api/memory", json={"body": f"a {kind}", "kind": kind})
+    kinds = [m["kind"] for m in client.get("/api/memory").json()["memories"]]
+    assert kinds == ["person", "project", "goal", "fact"]

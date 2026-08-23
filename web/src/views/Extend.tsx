@@ -6,6 +6,7 @@ import ExtensionEditor, { type EditorTarget } from "../components/ExtensionEdito
 import McpForm, { type McpTarget } from "../components/McpForm";
 import ConnectorLibrary from "../components/ConnectorLibrary";
 import SkillLibrary from "../components/SkillLibrary";
+import TemplatesSection from "../components/TemplatesSection";
 
 const EMPTY: ExtensionList = {
   plugins: [],
@@ -273,7 +274,8 @@ export default function Extend({ active }: { active: boolean }) {
         <div className="extend-head">
           <h2>Extend</h2>
           <p className="extend-lead">
-            What the agent can reach for. Four kinds, from ready-made to written by you.
+            What the agent can reach for. Four kinds of extension, from ready-made to written
+            by you — and the shapes your own notes start from.
           </p>
         </div>
 
@@ -351,6 +353,8 @@ export default function Extend({ active }: { active: boolean }) {
         >
           {row}
         </Section>
+
+        <TemplatesSection active={active} />
 
         <p className="muted extend-foot">
           Saving rebuilds the agent, so new tools are live on the next turn without a restart.
