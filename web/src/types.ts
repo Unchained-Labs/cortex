@@ -183,6 +183,34 @@ export interface NewNoteResult {
   path: string;
 }
 
+/**
+ * One proposed rewrite of the identity, waiting on a human. The agent may
+ * propose and may not write — `reason` is why it asked, `text` is the exact
+ * file it would write, and nothing has changed until someone accepts.
+ */
+export interface IdentityProposal {
+  id: number;
+  text: string;
+  reason: string;
+  created_at: string;
+  status: string;
+}
+
+/**
+ * `GET /api/identity` — who the brain is for, as a file rather than a config
+ * string. `untouched` is true while the file is still `starter`, which is also
+ * why the starter never reaches the prompt. `persona` is the old cortex.yaml
+ * string, still honoured and prepended to the file when both exist.
+ */
+export interface IdentityState {
+  text: string;
+  starter: string;
+  untouched: boolean;
+  persona: string;
+  max_chars: number;
+  proposals: IdentityProposal[];
+}
+
 export interface AdminUser {
   username: string;
   role: string;

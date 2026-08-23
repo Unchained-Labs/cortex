@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import type { Memory as MemoryRow, MemoryList } from "../types";
+import IdentityReadout from "../components/IdentityReadout";
 
 /** `2026-08-21T16:04:46+00:00` → `21 Aug`. Enough to date a belief. */
 function shortDate(iso: string): string {
@@ -144,7 +145,7 @@ function Row({
   );
 }
 
-export default function Memory({ active }: { active: boolean }) {
+export default function Memory({ active, isAdmin }: { active: boolean; isAdmin: boolean }) {
   const [kinds, setKinds] = useState<string[]>([]);
   const [rows, setRows] = useState<MemoryRow[]>([]);
   const [filter, setFilter] = useState(""); // "" = every kind
@@ -221,6 +222,10 @@ export default function Memory({ active }: { active: boolean }) {
             here or in chat, and everything it remembers is listed below for you to correct.
           </p>
         </div>
+
+        {/* Admins read and edit this in Admin → Identity; a second read-only
+         *  copy there would just be clutter. Members have no other way in. */}
+        {!isAdmin && <IdentityReadout active={active} />}
 
         {error && (
           <div className="banner banner-error">

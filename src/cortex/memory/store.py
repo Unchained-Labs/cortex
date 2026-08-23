@@ -576,15 +576,22 @@ class Store:
         return cur.lastrowid or 0
 
     def identity_proposals(self, status: str = "pending") -> list[sqlite3.Row]:
+        columns = (
+            "id, text, reason, created_at, status, decided_at, decided_by"
+        )
+        if status == "decided":
+            return self.db.execute(
+                f"SELECT {columns} FROM identity_proposals "
+                "WHERE status!='pending' ORDER BY id DESC LIMIT 50"
+            ).fetchall()
         if status:
             return self.db.execute(
-                "SELECT id, text, reason, created_at, status FROM identity_proposals "
+                f"SELECT {columns} FROM identity_proposals "
                 "WHERE status=? ORDER BY id DESC LIMIT 50",
                 (status,),
             ).fetchall()
         return self.db.execute(
-            "SELECT id, text, reason, created_at, status FROM identity_proposals "
-            "ORDER BY id DESC LIMIT 50"
+            f"SELECT {columns} FROM identity_proposals ORDER BY id DESC LIMIT 50"
         ).fetchall()
 
     def get_identity_proposal(self, proposal_id: int) -> sqlite3.Row | None:

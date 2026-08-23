@@ -272,7 +272,7 @@ export default function App() {
           id="panel-memory"
           aria-labelledby="tab-memory"
         >
-          <Memory active={tab === "memory"} />
+          <Memory active={tab === "memory"} isAdmin={isAdmin} />
         </div>
         <div
           className={tab === "channels" ? "view" : "view hidden"}

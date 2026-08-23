@@ -119,6 +119,7 @@ class PasswordReset(BaseModel):
 
 class IdentitySave(BaseModel):
     text: str
+    base_mtime: float | None = None
 
 
 class TemplateSave(BaseModel):
@@ -542,21 +543,29 @@ def build_app(brain: Brain) -> FastAPI:
     def get_identity(user: dict = Depends(current_user)) -> dict:
         from cortex import identity as identitymod
 
+        def as_proposal(row) -> dict:
+            return {
+                "id": row["id"],
+                "text": row["text"],
+                "reason": row["reason"],
+                "created_at": row["created_at"],
+                "status": row["status"],
+                "decided_at": row["decided_at"],
+                "decided_by": row["decided_by"],
+            }
+
         return {
             "text": identitymod.read(brain.config),
             "starter": identitymod.STARTER,
             "untouched": identitymod.is_untouched(brain.config),
             "persona": brain.config.persona,
             "max_chars": identitymod.MAX_IDENTITY_CHARS,
-            "proposals": [
-                {
-                    "id": r["id"],
-                    "text": r["text"],
-                    "reason": r["reason"],
-                    "created_at": r["created_at"],
-                    "status": r["status"],
-                }
-                for r in brain.store.identity_proposals()
+            "mtime": identitymod.mtime(brain.config),
+            "proposals": [as_proposal(r) for r in brain.store.identity_proposals()],
+            # what was decided, and by whom — the same question the rules
+            # history answers for moved notes
+            "decided": [
+                as_proposal(r) for r in brain.store.identity_proposals("decided")
             ],
         }
 
@@ -565,11 +574,16 @@ def build_app(brain: Brain) -> FastAPI:
         from cortex import identity as identitymod
 
         try:
-            identitymod.write(brain.config, body.text)
+            identitymod.write(brain.config, body.text, base_mtime=body.base_mtime)
+        except identitymod.IdentityConflict as exc:
+            return JSONResponse(
+                status_code=409,
+                content={"detail": "conflict", "server_mtime": exc.server_mtime},
+            )
         except identitymod.IdentityError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         await _reload_agent()
-        return {"ok": True}
+        return {"ok": True, "mtime": identitymod.mtime(brain.config)}
 
     @app.post("/api/identity/proposals/{proposal_id}/{decision}")
     async def decide_proposal(

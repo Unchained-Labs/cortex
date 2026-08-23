@@ -117,12 +117,18 @@ upgrading never drops a configured persona.
 its own instructions is one nobody can reason about, and the failure is silent — you
 would never know which version answered you.
 
-- `GET /api/identity` → `{text, starter, untouched, persona, max_chars, proposals: [{id,
-  text, reason, created_at, status}]}`. `untouched` is true while the file is still the
+- `GET /api/identity` → `{text, starter, untouched, persona, max_chars, mtime,
+  proposals: [P], decided: [P]}` where P is `{id, text, reason, created_at, status,
+  decided_at, decided_by}`. `proposals` is what is waiting; `decided` is what was
+  accepted or discarded and by whom — the same question the rules history answers for
+  moved notes. `untouched` is true while the file is still the
   starter, which is also why the starter never reaches the prompt: a placeholder in
   every conversation is worse than nothing.
-- `PUT /api/identity {text}` (admin) → `{ok}`; 422 over `max_chars`, because identity is
-  read on every turn and length costs on every turn.
+- `PUT /api/identity {text, base_mtime?}` (admin) → `{ok, mtime}`; 422 over `max_chars`,
+  because identity is read on every turn and length costs on every turn. Passing
+  `base_mtime` opts into the vault's concurrency rule — **409 `{detail: "conflict",
+  server_mtime}`** rather than clobbering another admin's save. Omitting it is explicit
+  last-writer-wins.
 - `POST /api/identity/proposals/{id}/{accept|discard}` (admin) → `{ok, decision}`.
   Accepting writes the file and rebuilds the agent; discarding writes nothing. Each
   proposal is decided once (404 afterwards), and anything but accept/discard is a 422.

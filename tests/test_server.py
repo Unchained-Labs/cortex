@@ -688,3 +688,31 @@ def test_accepting_a_proposal_writes_it_and_discarding_does_not(client, brain):
     assert client.post(f"/api/identity/proposals/{accepted}/accept").status_code == 404
     assert client.post(f"/api/identity/proposals/{accepted}/burn").status_code == 422
     assert client.get("/api/identity").json()["proposals"] == []
+
+
+def test_identity_records_what_was_decided_and_by_whom(client, brain):
+    proposal = brain.store.add_identity_proposal("new text\n", "a good reason")
+    signin(client, "erwin")
+    client.post(f"/api/identity/proposals/{proposal}/accept")
+    state = client.get("/api/identity").json()
+    assert state["proposals"] == []          # nothing pending
+    assert len(state["decided"]) == 1        # but the decision is on the record
+    assert state["decided"][0]["decided_by"] == "erwin"
+    assert state["decided"][0]["status"] == "accepted"
+
+
+def test_identity_refuses_a_stale_save(client, brain):
+    import os
+
+    from cortex import identity as identitymod
+
+    signin(client, "erwin")
+    client.put("/api/identity", json={"text": "first\n"})
+    stamp = client.get("/api/identity").json()["mtime"]
+    later = stamp + 10
+    os.utime(identitymod.path(brain.config), (later, later))
+
+    stale = client.put("/api/identity", json={"text": "second\n", "base_mtime": stamp})
+    assert stale.status_code == 409
+    assert stale.json()["server_mtime"] > stamp
+    assert identitymod.read(brain.config) == "first\n"

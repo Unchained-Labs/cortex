@@ -82,3 +82,32 @@ def test_deciding_a_proposal(brain: Brain):
     assert not store.decide_identity_proposal(first, "accepted", "erwin")  # once only
     assert store.identity_proposals("pending") == []
     assert store.identity_proposals("")[0]["status"] == "accepted"
+
+
+def test_a_concurrent_save_is_refused_not_clobbered(brain: Brain):
+    """The vault's rule, applied to identity: refuse rather than overwrite."""
+    import os
+
+    identity.write(brain.config, "first\n")
+    stamp = identity.mtime(brain.config)
+    later = stamp + 10
+    os.utime(identity.path(brain.config), (later, later))
+
+    with pytest.raises(identity.IdentityConflict) as caught:
+        identity.write(brain.config, "second\n", base_mtime=stamp)
+    assert caught.value.server_mtime > stamp
+    assert identity.read(brain.config) == "first\n"
+
+    # no base_mtime is an explicit last-writer-wins, and still works
+    identity.write(brain.config, "second\n")
+    assert identity.read(brain.config) == "second\n"
+
+
+def test_decided_proposals_keep_who_and_when(brain: Brain):
+    store = brain.store
+    accepted = store.add_identity_proposal("v2", "because")
+    store.decide_identity_proposal(accepted, "accepted", "erwin")
+    decided = store.identity_proposals("decided")
+    assert len(decided) == 1
+    assert decided[0]["decided_by"] == "erwin" and decided[0]["decided_at"]
+    assert store.identity_proposals("pending") == []

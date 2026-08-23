@@ -84,7 +84,25 @@ def read(config: BrainConfig) -> str:
     return target.read_text(encoding="utf-8", errors="replace")
 
 
-def write(config: BrainConfig, text: str) -> str:
+class IdentityConflict(IdentityError):
+    """Someone else saved while this editor was open."""
+
+    def __init__(self, server_mtime: float):
+        super().__init__("conflict")
+        self.server_mtime = server_mtime
+
+
+def mtime(config: BrainConfig) -> float:
+    target = path(config)
+    return target.stat().st_mtime if target.is_file() else 0.0
+
+
+def write(config: BrainConfig, text: str, base_mtime: float | None = None) -> str:
+    if base_mtime is not None:
+        current = mtime(config)
+        if current > base_mtime + 1e-6:
+            # the vault's rule, applied here: refuse rather than clobber
+            raise IdentityConflict(current)
     if len(text) > MAX_IDENTITY_CHARS:
         raise IdentityError(
             f"identity is {len(text)} characters; keep it under {MAX_IDENTITY_CHARS}. "

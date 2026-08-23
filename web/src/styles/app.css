@@ -1451,6 +1451,155 @@ select { cursor: pointer; }
 .tpl-placeholders { font-size: var(--ul-text-xs); }
 .tpl-ph { margin-right: 0.5em; color: var(--ul-muted); }
 
+/* ---- identity ------------------------------------------------------------ */
+
+.id-section { margin-top: var(--ul-space-4); }
+.id-count { font-size: var(--ul-text-xs); color: var(--ul-muted); white-space: nowrap; }
+.id-count-over { color: var(--ul-down); }
+
+/* Still the starter file, so it is deliberately kept out of the prompt.
+ * Said in words, not only in amber — the tint is the second signal. */
+.id-section .id-untouched {
+  margin: 0 0 var(--ul-space-3);
+  padding: var(--ul-space-2) var(--ul-space-3);
+  font-size: var(--ul-text-sm);
+  color: var(--ul-body);
+  background: var(--ul-warn-wash);
+  border-left: 2px solid var(--ul-warn);
+  border-radius: 0 var(--ul-radius) var(--ul-radius) 0;
+  max-width: 60em;
+}
+.id-untouched strong { color: var(--ul-warn); }
+
+.id-persona { margin: 0 0 var(--ul-space-3); }
+.id-persona .label { margin: 0 0 var(--ul-space-1); }
+.id-section .id-persona-note {
+  margin: var(--ul-space-1) 0 0;
+  font-size: var(--ul-text-xs);
+  color: var(--ul-muted);
+  max-width: 60em;
+}
+
+/* Any identity text shown rather than edited: the persona, a proposal, the
+ * member-facing readout. Wraps, because a pasted paragraph is one long line. */
+.id-text {
+  margin: 0;
+  padding: var(--ul-space-3);
+  font-size: var(--ul-text-xs);
+  line-height: 1.6;
+  color: var(--ul-body);
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.id-editor {
+  display: flex;
+  height: 20rem;
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+  overflow: hidden;
+}
+.id-editor-dirty { border-color: var(--ul-accent-dim); }
+.id-error { border-radius: var(--ul-radius); margin: var(--ul-space-3) 0 0; }
+.id-section .id-saved {
+  margin: var(--ul-space-3) 0 0;
+  font-size: var(--ul-text-sm);
+  color: var(--ul-up);
+}
+
+.id-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-3);
+  margin-top: var(--ul-space-3);
+}
+.id-dirty, .id-over { font-size: var(--ul-text-xs); }
+.id-over { color: var(--ul-down); }
+
+/* ---- identity proposals -------------------------------------------------- */
+
+.id-proposals { margin-top: var(--ul-space-6); }
+.id-proposals h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--ul-space-2);
+  margin: 0 0 var(--ul-space-2);
+  font-size: var(--ul-text-base);
+  color: var(--ul-heading);
+}
+.id-prop-count { font-size: var(--ul-text-xs); }
+
+.id-proposal {
+  margin-top: var(--ul-space-3);
+  padding: var(--ul-space-4);
+  background: var(--ul-bg);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius);
+}
+.id-prop-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-2);
+  justify-content: space-between;
+}
+.id-prop-when { font-size: var(--ul-text-xs); }
+/* The reason is the whole point of a proposal — it leads, at reading size. */
+.id-proposal .id-prop-reason {
+  margin: var(--ul-space-3) 0 var(--ul-space-2);
+  font-size: var(--ul-text-base);
+  line-height: 1.5;
+  color: var(--ul-heading);
+  max-width: 60em;
+}
+.id-proposal .id-prop-note {
+  margin: 0 0 var(--ul-space-3);
+  font-size: var(--ul-text-xs);
+  color: var(--ul-muted);
+  max-width: 60em;
+}
+.id-prop-actions { display: flex; gap: var(--ul-space-2); margin-top: var(--ul-space-3); }
+
+.id-section .id-diff-summary {
+  margin: 0 0 var(--ul-space-2);
+  font-size: var(--ul-text-xs);
+  color: var(--ul-muted);
+}
+.id-section .ext-empty { margin: 0; color: var(--ul-muted); max-width: 60em; }
+.id-diff { display: block; }
+.id-diff-line { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Colour is never alone: every line already carries its + or - glyph. */
+.id-diff-add { color: var(--ul-up); background: var(--ul-up-wash); }
+.id-diff-remove { color: var(--ul-down); background: var(--ul-down-wash); }
+.id-diff-same { color: var(--ul-muted); }
+.id-diff-gap {
+  display: block;
+  color: var(--ul-faint);
+  border-top: 1px solid var(--ul-line);
+  border-bottom: 1px solid var(--ul-line);
+  margin: var(--ul-space-1) 0;
+}
+
+/* ---- identity, read-only (Memory) ---------------------------------------- */
+
+.id-readout {
+  margin: 0 0 var(--ul-space-4);
+  padding: var(--ul-space-3) var(--ul-space-4);
+  background: var(--ul-bg-raised);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+}
+.id-readout summary { cursor: pointer; font-size: var(--ul-text-sm); color: var(--ul-heading); }
+.id-readout-hint { font-size: var(--ul-text-xs); }
+.id-readout-body { margin-top: var(--ul-space-3); display: grid; gap: var(--ul-space-2); }
+.id-readout-note { margin: 0; font-size: var(--ul-text-xs); }
+
 /* ---- responsive ---------------------------------------------------------- */
 
 /* The brand and the user strip are fixed furniture; only the tabs scroll. */
@@ -1490,4 +1639,7 @@ select { cursor: pointer; }
   .composer, .search-bar { padding: var(--ul-space-3); }
   .preview-scroll { padding: var(--ul-space-4); }
   .pane-empty { padding: var(--ul-space-4); }
+  /* On a phone a 20rem editor is most of the screen before you have typed. */
+  .id-editor { height: 14rem; }
+  .id-text { max-height: 15rem; }
 }
