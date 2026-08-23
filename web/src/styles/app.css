@@ -1379,6 +1379,78 @@ select { cursor: pointer; }
   flex: none;
 }
 
+/* ---- note templates ------------------------------------------------------ */
+
+/* Two ways in sit under the vault picker now. Side by side, "New from
+ * template…" wraps to two lines in a 290px sidebar, so they stack instead. */
+.side-sub { display: flex; flex-direction: column; gap: var(--ul-space-2); }
+
+.tpl-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-4);
+}
+.tpl-drawer-body .import-lead { margin-bottom: var(--ul-space-4); }
+.tpl-pick-label { margin: 0 0 var(--ul-space-2); }
+
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--ul-space-3);
+  margin-bottom: var(--ul-space-4);
+}
+
+/* Each card carries the target pattern, because "where did it go" should be
+ * answered before the note exists, not after. */
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ul-space-1);
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  font: inherit;
+  color: var(--ul-body);
+  background: var(--ul-bg-inset);
+  border: 1px solid var(--ul-line);
+  border-radius: var(--ul-radius);
+  padding: var(--ul-space-3);
+}
+.tpl-card:hover { border-color: var(--ul-line-strong); }
+.tpl-card.picked {
+  border-color: var(--ul-accent);
+  background: var(--ul-accent-wash);
+}
+.tpl-card:focus-visible { outline: none; box-shadow: var(--ul-ring); }
+.tpl-title { font-size: var(--ul-text-sm); color: var(--ul-heading); overflow-wrap: anywhere; }
+.tpl-name { font-size: var(--ul-text-xs); color: var(--ul-faint); overflow-wrap: anywhere; }
+.tpl-target { font-size: var(--ul-text-xs); color: var(--ul-muted); overflow-wrap: anywhere; }
+
+/* The target pattern is the whole point of the panel — where the note is
+ * about to land — so it gets a row rather than a third of one. */
+.drawer-fields .tpl-target-field { flex: 1 1 100%; }
+
+.tpl-title-field { max-width: 28rem; margin-bottom: var(--ul-space-2); }
+.tpl-lands { font-size: var(--ul-text-sm); margin: 0 0 var(--ul-space-4); }
+.tpl-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ul-space-3); }
+.tpl-empty p { margin: 0; font-size: var(--ul-text-sm); max-width: 46em; }
+
+.tpl-hint-pills { vertical-align: middle; }
+.tpl-said { margin: 0 0 var(--ul-space-3); font-size: var(--ul-text-sm); color: var(--ul-up); }
+.tpl-row-name { font-size: var(--ul-text-xs); color: var(--ul-faint); }
+.tpl-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ul-space-3);
+  margin-top: var(--ul-space-4);
+}
+.tpl-placeholders { font-size: var(--ul-text-xs); }
+.tpl-ph { margin-right: 0.5em; color: var(--ul-muted); }
+
 /* ---- responsive ---------------------------------------------------------- */
 
 /* The brand and the user strip are fixed furniture; only the tabs scroll. */

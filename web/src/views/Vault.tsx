@@ -9,6 +9,7 @@ import { splitFrontmatter, toggleTask, resolveTarget, isImagePath } from "../lib
 import Editor from "../components/Editor";
 import Markdown from "../components/Markdown";
 import ImportDrawer from "../components/ImportDrawer";
+import TemplateDrawer from "../components/TemplateDrawer";
 
 type Mode = "edit" | "preview";
 
@@ -71,10 +72,13 @@ function TreeView({
 export default function Vault({
   target,
   importNonce,
+  isAdmin,
 }: {
   target: VaultTarget | null;
   /** bumped when something outside asks for the import panel (Today's card) */
   importNonce: number;
+  /** only an admin may install or edit the shared template set */
+  isAdmin: boolean;
 }) {
   const [vaults, setVaults] = useState<VaultMeta[]>([]);
   const [vault, setVault] = useState<string | null>(null);
@@ -90,6 +94,7 @@ export default function Vault({
   const [error, setError] = useState<string | null>(null);
   const [newPath, setNewPath] = useState<string | null>(null); // null = closed
   const [importing, setImporting] = useState(false);
+  const [templating, setTemplating] = useState(false);
   /** a `sources/…` file opened through /api/file: readable, never writable */
   const [source, setSource] = useState<IndexedFile | null>(null);
   const seenNonce = useRef(0);
@@ -242,6 +247,31 @@ export default function Vault({
       if (into === vaultRef.current) void loadTree(into).catch(() => {});
     },
     [loadTree],
+  );
+
+  /**
+   * A template made a note. Refresh the tree it is now in and open it —
+   * a note you cannot see was not really created. An unsaved buffer still
+   * gets asked about first; the file exists either way, so declining keeps
+   * the edit and says where the new note went.
+   */
+  const afterTemplate = useCallback(
+    (into: string, path: string) => {
+      setTemplating(false);
+      const open = confirmDiscard(`Open the new note ${path} anyway and lose them?`);
+      if (into !== vaultRef.current) {
+        if (open) void selectVault(into, path);
+        else void loadTree(vaultRef.current ?? into).catch(() => {});
+      } else {
+        void loadTree(into)
+          .then(() => {
+            if (open) void openFile(into, path);
+          })
+          .catch(() => {});
+      }
+      if (!open) setNotice(`Created ${path} in ${into}.`);
+    },
+    [confirmDiscard, loadTree, openFile, selectVault],
   );
 
   // Another session saved a file we may have open.
@@ -431,9 +461,17 @@ export default function Vault({
             +
           </button>
         </div>
-        {/* Bringing notes in belongs beside the vault it fills, not in a tab
-            of its own — it is something you do once, not somewhere you live. */}
+        {/* Starting from a shape sits beside starting from nothing: + makes an
+            empty file, this one makes a meeting. Bringing notes in belongs
+            here too — something you do once, not somewhere you live. */}
         <div className="side-sub">
+          <button
+            className="btn btn-sm"
+            disabled={vault === null}
+            onClick={() => setTemplating(true)}
+          >
+            New from template…
+          </button>
           <button className="btn btn-sm" onClick={() => setImporting(true)}>
             Import…
           </button>
@@ -603,10 +641,21 @@ export default function Vault({
         ) : (
           <div className="pane-empty">
             <p className="label">Vault</p>
-            <p className="muted">Pick a file from the tree, or create one with +.</p>
+            <p className="muted">
+              Pick a file from the tree, create an empty one with +, or start from a template.
+            </p>
           </div>
         )}
       </section>
+
+      {templating && (
+        <TemplateDrawer
+          vault={vault}
+          isAdmin={isAdmin}
+          onClose={() => setTemplating(false)}
+          onCreated={(r) => afterTemplate(r.vault, r.path)}
+        />
+      )}
 
       {importing && (
         <ImportDrawer

@@ -46,7 +46,8 @@ class Template:
     name: str
     title: str
     target: str
-    body: str
+    body: str          # frontmatter stripped, for rendering
+    raw: str = ""      # the file exactly as written, for editing
 
     def as_dict(self) -> dict:
         return {
@@ -54,6 +55,10 @@ class Template:
             "title": self.title,
             "target": self.target,
             "body": self.body,
+            # PUT writes the whole file, so an editor must round-trip this
+            # one — saving `body` back would delete the frontmatter and with
+            # it the target every note from this template lands at.
+            "raw": self.raw or self.body,
         }
 
 
@@ -101,7 +106,7 @@ def parse(name: str, text: str) -> Template:
         body = text[front.end():]
     if not target:
         target = "{{slug}}.md"
-    return Template(name=name, title=title, target=target, body=body)
+    return Template(name=name, title=title, target=target, body=body, raw=text)
 
 
 def list_templates(config: BrainConfig) -> list[Template]:

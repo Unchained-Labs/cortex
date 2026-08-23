@@ -114,13 +114,20 @@ where its notes land (`name:` and `target:`). Placeholders are deliberately few 
 left visible rather than blanked, so a typo looks wrong instead of losing a line.
 Reading and using templates is open to any user; editing the shared set is admin-only.
 
-- `GET /api/templates` → `{templates: [{name, title, target, body}], placeholders}`
+- `GET /api/templates` → `{templates: [{name, title, target, body, raw}], placeholders}`.
+  **`body` is the frontmatter-stripped body for rendering; `raw` is the file as written.**
+  An editor must round-trip `raw` — `PUT` writes the whole file, so saving `body` back
+  would delete the frontmatter and silently relocate every future note from that
+  template.
 - `POST /api/templates/new-note {template, vault, title}` → `{vault, path}`.
   **422 if the note already exists** — a template starts something, it never
   overwrites. 404 for an unknown template or a vault the caller may not write.
 - `PUT /api/templates {name, body}` (admin) → the saved template, 422 on a bad name.
-- `DELETE /api/templates/{name}` (admin), `POST /api/templates/install` (admin) →
-  `{written}` for the starter set, which never clobbers an edited file.
+- `DELETE /api/templates/{name}` (admin).
+- `POST /api/templates/install` (admin) → `{written: [name, …]}`, the names actually
+  written; the starter set never clobbers an edited file, so a second call returns `[]`.
+- `PUT` slugifies the name it is given (`My Notes` → `my-notes`) and returns the name it
+  used — show that back rather than assuming what was typed.
 
 ### Memory (any signed-in user)
 

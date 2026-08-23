@@ -98,3 +98,17 @@ def test_create_note_needs_a_title_and_cannot_escape(brain: Brain):
     escaping = templates.Template("x", "X", "../../{{slug}}.md", "hi")
     with pytest.raises(templates.TemplateError, match="climb out"):
         templates.create_note(brain.config, escaping, "shared", "Escape")
+
+
+def test_raw_round_trips_where_body_would_not(brain: Brain):
+    """`body` is frontmatter-stripped for rendering; saving it back would
+    delete the target and silently relocate every future note. `raw` is
+    the file, and it round-trips byte for byte."""
+    templates.install_builtin(brain.config)
+    for original in templates.list_templates(brain.config):
+        assert "target:" in original.raw
+        assert "target:" not in original.body  # stripped, by design
+        templates.save(brain.config, original.name, original.raw)
+        again = templates.get(brain.config, original.name)
+        assert again.raw == original.raw
+        assert again.target == original.target
