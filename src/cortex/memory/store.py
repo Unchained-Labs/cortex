@@ -358,16 +358,24 @@ class Store:
             )
         return cur.rowcount > 0
 
+    # person before project before preference … alphabetical order would put
+    # `fact` first, which is the least interesting kind.
+    _KIND_ORDER = (
+        "CASE kind WHEN 'person' THEN 0 WHEN 'project' THEN 1 "
+        "WHEN 'preference' THEN 2 WHEN 'goal' THEN 3 ELSE 4 END"
+    )
+
     def facts_by_kind(self, kind: str = "", limit: int = 200) -> list[sqlite3.Row]:
         if kind:
             return self.db.execute(
                 "SELECT id, body, source, created_at, kind, subject FROM facts "
-                "WHERE retired=0 AND kind=? ORDER BY kind, subject, id DESC LIMIT ?",
+                f"WHERE retired=0 AND kind=? ORDER BY {self._KIND_ORDER}, subject, id DESC "
+                "LIMIT ?",
                 (kind, limit),
             ).fetchall()
         return self.db.execute(
             "SELECT id, body, source, created_at, kind, subject FROM facts "
-            "WHERE retired=0 ORDER BY kind, subject, id DESC LIMIT ?",
+            f"WHERE retired=0 ORDER BY {self._KIND_ORDER}, subject, id DESC LIMIT ?",
             (limit,),
         ).fetchall()
 

@@ -131,12 +131,26 @@ def _scaffold(root: Path, config_text: str) -> None:
         (root / sub).mkdir(parents=True, exist_ok=True)
     (root / CONFIG_NAME).write_text(config_text, encoding="utf-8")
     _install_bundled_skills(root)
+    _install_starter_templates(root)
     welcome = root / "vaults" / "shared" / "welcome.md"
     if not welcome.exists():
         welcome.write_text(WELCOME_NOTE, encoding="utf-8")
     gitignore = root / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(".cortex/\n", encoding="utf-8")
+
+
+def _install_starter_templates(root: Path) -> None:
+    """A new brain gets the starter templates, so "new meeting note" works
+    on day one rather than after someone discovers the feature."""
+    from cortex import templates as templatesmod
+
+    directory = root / "templates"
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, text in templatesmod.BUILTIN.items():
+        path = directory / f"{name}.md"
+        if not path.exists():
+            path.write_text(text, encoding="utf-8")
 
 
 def _install_bundled_skills(root: Path) -> None:
@@ -493,6 +507,47 @@ def cmd_demo(args: argparse.Namespace) -> None:
     brain.close()
 
 
+def cmd_new(args: argparse.Namespace) -> None:
+    """Start a note from a template."""
+    from cortex import templates as templatesmod
+
+    brain = _brain(args)
+    if not args.template:
+        found = templatesmod.list_templates(brain.config)
+        if not found:
+            print("no templates yet — `cortex templates install` adds the starter set")
+        for template in found:
+            print(f"{template.name:<16} {template.title}  → {template.target}")
+        brain.close()
+        return
+    template = templatesmod.get(brain.config, args.template)
+    if template is None:
+        brain.close()
+        sys.exit(f"no template named {args.template!r}")
+    try:
+        rel, _ = templatesmod.create_note(
+            brain.config, template, args.vault, " ".join(args.title)
+        )
+    except templatesmod.TemplateError as exc:
+        brain.close()
+        sys.exit(f"error: {exc}")
+    print(f"vaults/{args.vault}/{rel}")
+    brain.close()
+
+
+def cmd_templates(args: argparse.Namespace) -> None:
+    from cortex import templates as templatesmod
+
+    brain = _brain(args)
+    written = templatesmod.install_builtin(brain.config)
+    if written:
+        print("added: " + ", ".join(written))
+    else:
+        print("the starter templates are already there")
+    print(f"they live in {brain.config.templates_dir} — edit them freely")
+    brain.close()
+
+
 def cmd_clip(args: argparse.Namespace) -> None:
     """Save a web page into the brain as markdown."""
     from cortex import clip as clipper
@@ -740,6 +795,18 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--vault", default="shared")
     p.add_argument("--brain")
     p.set_defaults(func=cmd_demo)
+
+    p = sub.add_parser("new", help="start a note from a template")
+    p.add_argument("template", nargs="?", default="", help="omit to list templates")
+    p.add_argument("title", nargs="*")
+    p.add_argument("--vault", default="shared")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_new)
+
+    p = sub.add_parser("templates", help="install the starter note templates")
+    p.add_argument("action", choices=["install"])
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_templates)
 
     p = sub.add_parser("clip", help="save a web page into the brain as markdown")
     p.add_argument("url")

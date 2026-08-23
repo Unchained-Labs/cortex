@@ -117,6 +117,17 @@ class PasswordReset(BaseModel):
     new_password: str
 
 
+class TemplateSave(BaseModel):
+    name: str
+    body: str
+
+
+class NoteFromTemplate(BaseModel):
+    template: str
+    vault: str = "shared"
+    title: str
+
+
 class MemoryBody(BaseModel):
     body: str
     kind: str = "fact"
@@ -516,6 +527,65 @@ def build_app(brain: Brain) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         await _after_write(target, rel)
         return {"vault": target, "path": rel, "line": lineno, "text": text}
+
+    # -- templates ----------------------------------------------------------
+    #
+    # Capture handles the unstructured half. A meeting, a trip or a person
+    # has a shape, and rebuilding it from memory each time is the friction
+    # that stops people writing them down at all.
+
+    @app.get("/api/templates")
+    def list_templates(user: dict = Depends(current_user)) -> dict:
+        from cortex import templates as templatesmod
+
+        return {
+            "templates": [t.as_dict() for t in templatesmod.list_templates(brain.config)],
+            "placeholders": sorted(templatesmod.placeholders("Example", user=user["username"])),
+        }
+
+    @app.post("/api/templates/install")
+    def install_templates(user: dict = Depends(admin_user)) -> dict:
+        from cortex import templates as templatesmod
+
+        return {"written": templatesmod.install_builtin(brain.config)}
+
+    @app.put("/api/templates")
+    def save_template(body: TemplateSave, user: dict = Depends(admin_user)) -> dict:
+        from cortex import templates as templatesmod
+
+        try:
+            saved = templatesmod.save(brain.config, body.name, body.body)
+        except templatesmod.TemplateError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return saved.as_dict()
+
+    @app.delete("/api/templates/{name}")
+    def delete_template(name: str, user: dict = Depends(admin_user)) -> dict:
+        from cortex import templates as templatesmod
+
+        if not templatesmod.delete(brain.config, name):
+            raise HTTPException(status_code=404, detail="no such template")
+        return {"ok": True}
+
+    @app.post("/api/templates/new-note")
+    async def note_from_template(
+        body: NoteFromTemplate, user: dict = Depends(current_user)
+    ) -> dict:
+        from cortex import templates as templatesmod
+
+        _check_vault_access(user, body.vault)
+        _ensure_personal_vault(user)
+        template = templatesmod.get(brain.config, body.template)
+        if template is None:
+            raise HTTPException(status_code=404, detail="no such template")
+        try:
+            rel, _ = templatesmod.create_note(
+                brain.config, template, body.vault, body.title, user=user["username"]
+            )
+        except templatesmod.TemplateError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _after_write(body.vault, rel)
+        return {"vault": body.vault, "path": rel}
 
     # -- memory -----------------------------------------------------------
     #
