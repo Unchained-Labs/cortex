@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cortxai"
-version = "0.3.0"
+version = "0.4.0"
 description = "A self-hosted brain for your home, your company, or any activity: pluggable local or cloud LLMs, hybrid memory, and an expandable plugin surface."
 readme = "README.md"
 license = { file = "LICENSE" }

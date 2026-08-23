@@ -6,6 +6,74 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-23
+
+Automation, and the three ideas worth taking from the Second Brain
+Architecture reference doing the rounds — typed memory, note templates, and
+identity as a file. Its principles were mostly things cortex already
+committed to; its thirty-subdirectory taxonomy was the part to decline,
+since the retrieval evidence says elaborate filing does not improve finding
+anything. Capture stays unfiled and search stays the way back to it.
+
+### Added
+
+- **Rules** — match notes on path, tag, frontmatter, content or age, then
+  move, tag or archive them. There is **no delete action**, preview is free
+  and comes before apply, and every change is logged, because this moves
+  someone's writing.
+- **Scheduled jobs** — sync a connector, re-index, run the rules, write the
+  digest into a note, or post it into a channel. Intervals are hours in
+  plain words rather than cron, and each job describes itself: *apply the
+  tidying rules daily*.
+- **Typed memory** — memories carry a kind (`person`, `project`,
+  `preference`, `goal`, `fact`) and a subject, so "what do we know about
+  Priya" is a lookup rather than a search. `recall_about` is the direct
+  route; a **Memory** tab makes everything the brain believes visible and
+  correctable by anyone, not just admins.
+- **Note templates** — a markdown file under `templates/` with frontmatter
+  saying where its notes land. Five ship and a new brain gets them. Six
+  placeholders only; an unknown one stays visible so a typo looks wrong
+  rather than quietly eating a line. Creating a note never overwrites one.
+- **`identity.md`** — who the brain is for, read into every prompt, editable
+  in the dashboard. **The agent may propose changes and may not make them**:
+  a system that quietly rewrites its own instructions is one nobody can
+  reason about, and the failure is silent. Proposals carry a reason, an
+  admin decides, and the decision is on the record.
+- **Libraries** — ready-made skills and connectors added in a click,
+  including a working RSS connector, so an empty section offers something
+  rather than a blank editor.
+- `cortex new`, `cortex templates install`, and memory kinds throughout the
+  CLI.
+
+### Changed
+
+- **Import folded into Vault.** It is a once-a-year vault operation that was
+  holding a top-level slot; Memory took the slot instead, so the tab count
+  did not grow.
+- The server owns canonical memory-kind ordering, so no client reimplements
+  it and drifts.
+- `PUT /api/identity` takes an optional `base_mtime` and answers 409 rather
+  than clobbering, matching the vault.
+
+### Fixed
+
+- **Templates could silently lose where their notes land.** The list
+  response returned the frontmatter-stripped body while `PUT` writes the
+  whole file, so a client that loaded and saved a template deleted its
+  `target:` line — and every future note from it landed somewhere else,
+  with nothing erroring. The response now carries `raw` beside `body`.
+- `jobs.every()` had an unreachable branch that made "twice a day"
+  impossible to render.
+
+### Compatibility
+
+Nothing here breaks an existing brain. `remember(fact)` and `recall(query)`
+keep their signatures, a configured `persona:` string is still honoured and
+still reaches the prompt, and a database written before typed memory is
+migrated in place — untyped memories become plain facts with no subject,
+which is exactly what they were. Nothing is dropped and nothing is guessed
+at.
+
 ## [0.3.0] - 2026-08-22
 
 The release that gives cortex a reason to be opened tomorrow. Everything
@@ -166,7 +234,8 @@ the CLI stay `cortex`.
 - The calendar connector does not expand recurrence rules yet.
 - Cortex hosts no model; you bring an endpoint.
 
-[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.0
