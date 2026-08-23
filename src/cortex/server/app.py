@@ -117,6 +117,10 @@ class PasswordReset(BaseModel):
     new_password: str
 
 
+class IdentitySave(BaseModel):
+    text: str
+
+
 class TemplateSave(BaseModel):
     name: str
     body: str
@@ -527,6 +531,69 @@ def build_app(brain: Brain) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         await _after_write(target, rel)
         return {"vault": target, "path": rel, "line": lineno, "text": text}
+
+    # -- identity -----------------------------------------------------------
+    #
+    # Everyone can read who the brain thinks it is for; admins edit it. The
+    # agent may propose and may not write: a system that quietly rewrites
+    # its own instructions is one nobody can reason about.
+
+    @app.get("/api/identity")
+    def get_identity(user: dict = Depends(current_user)) -> dict:
+        from cortex import identity as identitymod
+
+        return {
+            "text": identitymod.read(brain.config),
+            "starter": identitymod.STARTER,
+            "untouched": identitymod.is_untouched(brain.config),
+            "persona": brain.config.persona,
+            "max_chars": identitymod.MAX_IDENTITY_CHARS,
+            "proposals": [
+                {
+                    "id": r["id"],
+                    "text": r["text"],
+                    "reason": r["reason"],
+                    "created_at": r["created_at"],
+                    "status": r["status"],
+                }
+                for r in brain.store.identity_proposals()
+            ],
+        }
+
+    @app.put("/api/identity")
+    async def put_identity(body: IdentitySave, user: dict = Depends(admin_user)) -> dict:
+        from cortex import identity as identitymod
+
+        try:
+            identitymod.write(brain.config, body.text)
+        except identitymod.IdentityError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        await _reload_agent()
+        return {"ok": True}
+
+    @app.post("/api/identity/proposals/{proposal_id}/{decision}")
+    async def decide_proposal(
+        proposal_id: int, decision: str, user: dict = Depends(admin_user)
+    ) -> dict:
+        from cortex import identity as identitymod
+
+        if decision not in ("accept", "discard"):
+            raise HTTPException(status_code=422, detail="accept or discard")
+        row = brain.store.get_identity_proposal(proposal_id)
+        if row is None or row["status"] != "pending":
+            raise HTTPException(status_code=404, detail="no pending proposal with that id")
+        if decision == "accept":
+            try:
+                identitymod.write(brain.config, row["text"])
+            except identitymod.IdentityError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        brain.store.decide_identity_proposal(
+            proposal_id, "accepted" if decision == "accept" else "discarded",
+            user["username"],
+        )
+        if decision == "accept":
+            await _reload_agent()
+        return {"ok": True, "decision": decision}
 
     # -- templates ----------------------------------------------------------
     #

@@ -636,3 +636,55 @@ def test_memory_kinds_come_back_in_a_useful_order(client):
         client.post("/api/memory", json={"body": f"a {kind}", "kind": kind})
     kinds = [m["kind"] for m in client.get("/api/memory").json()["memories"]]
     assert kinds == ["person", "project", "goal", "fact"]
+
+
+IDENTITY_TEXT = "# About\n\nWe eat at seven and the bins go out Tuesday.\n"
+
+
+def test_identity_read_by_all_edited_by_admins(client, brain):
+    signin(client, "sam")
+    got = client.get("/api/identity").json()
+    assert got["untouched"] is True and got["proposals"] == []
+    assert client.put("/api/identity", json={"text": IDENTITY_TEXT}).status_code == 403
+
+    client.post("/api/auth/logout")
+    signin(client, "erwin")
+    assert client.put("/api/identity", json={"text": IDENTITY_TEXT}).status_code == 200
+    after = client.get("/api/identity").json()
+    assert after["text"] == IDENTITY_TEXT and after["untouched"] is False
+    assert (brain.config.root / "identity.md").read_text() == IDENTITY_TEXT
+
+
+def test_identity_is_length_capped_over_the_api(client):
+    signin(client, "erwin")
+    res = client.put("/api/identity", json={"text": "x" * 9000})
+    assert res.status_code == 422 and "every conversation" in res.json()["detail"]
+
+
+def test_accepting_a_proposal_writes_it_and_discarding_does_not(client, brain):
+    from cortex import identity as identitymod
+
+    identitymod.write(brain.config, "original\n")
+    accepted = brain.store.add_identity_proposal("accepted text\n", "good reason")
+    discarded = brain.store.add_identity_proposal("discarded text\n", "bad reason")
+
+    signin(client, "sam")
+    assert client.post(
+        f"/api/identity/proposals/{accepted}/accept"
+    ).status_code == 403  # deciding is an admin call
+
+    client.post("/api/auth/logout")
+    signin(client, "erwin")
+    assert client.get("/api/identity").json()["proposals"][0]["reason"] in {
+        "good reason", "bad reason"
+    }
+    assert client.post(f"/api/identity/proposals/{discarded}/discard").json()["ok"]
+    assert (brain.config.root / "identity.md").read_text() == "original\n"
+
+    assert client.post(f"/api/identity/proposals/{accepted}/accept").json()["ok"]
+    assert (brain.config.root / "identity.md").read_text() == "accepted text\n"
+
+    # each decision happens once, and only on a pending proposal
+    assert client.post(f"/api/identity/proposals/{accepted}/accept").status_code == 404
+    assert client.post(f"/api/identity/proposals/{accepted}/burn").status_code == 422
+    assert client.get("/api/identity").json()["proposals"] == []

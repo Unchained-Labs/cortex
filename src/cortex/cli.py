@@ -132,12 +132,19 @@ def _scaffold(root: Path, config_text: str) -> None:
     (root / CONFIG_NAME).write_text(config_text, encoding="utf-8")
     _install_bundled_skills(root)
     _install_starter_templates(root)
+    (root / "identity.md").write_text(_identity_starter(), encoding="utf-8")
     welcome = root / "vaults" / "shared" / "welcome.md"
     if not welcome.exists():
         welcome.write_text(WELCOME_NOTE, encoding="utf-8")
     gitignore = root / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(".cortex/\n", encoding="utf-8")
+
+
+def _identity_starter() -> str:
+    from cortex import identity as identitymod
+
+    return identitymod.STARTER
 
 
 def _install_starter_templates(root: Path) -> None:

@@ -106,6 +106,27 @@ same trust level as a stdio MCP server. The UI must say this where code is edite
   then a re-index is queued.
 - `DELETE /api/extensions/{kind}/{name}` → `{ok}`. 422 for a cortex.yaml-defined MCP server.
 
+### Identity
+
+`identity.md` at the brain root: who the brain is for and how they like things done,
+read into every system prompt. Any user may read it; **admins edit it**. The old
+`persona:` string in cortex.yaml is still honoured — both appear when both exist, so
+upgrading never drops a configured persona.
+
+**The agent may propose changes and may not make them.** A system that quietly rewrites
+its own instructions is one nobody can reason about, and the failure is silent — you
+would never know which version answered you.
+
+- `GET /api/identity` → `{text, starter, untouched, persona, max_chars, proposals: [{id,
+  text, reason, created_at, status}]}`. `untouched` is true while the file is still the
+  starter, which is also why the starter never reaches the prompt: a placeholder in
+  every conversation is worse than nothing.
+- `PUT /api/identity {text}` (admin) → `{ok}`; 422 over `max_chars`, because identity is
+  read on every turn and length costs on every turn.
+- `POST /api/identity/proposals/{id}/{accept|discard}` (admin) → `{ok, decision}`.
+  Accepting writes the file and rebuilds the agent; discarding writes nothing. Each
+  proposal is decided once (404 afterwards), and anything but accept/discard is a 422.
+
 ### Note templates
 
 A template is a markdown file under `templates/` with optional frontmatter naming
@@ -225,6 +246,16 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
+
+### Identity in the dashboard (v0.4)
+
+Put it where the brain's own settings live — an **Identity** section in Admin is the
+natural home, since editing is admin-only. Show the current text in the editor, save via
+PUT with the 422 rendered inline. **Pending proposals are the interesting part**: each
+shows its reason, the proposed text (a diff against the current text if that is cheap,
+otherwise the full text), and Accept / Discard. Make it obvious that nothing has changed
+yet — a pending proposal is a question, not a fait accompli. Any signed-in user can read
+the identity text; only admins see the editor and the decisions.
 
 ### Templates in the Vault (v0.4)
 

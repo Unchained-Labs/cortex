@@ -112,6 +112,11 @@ CREATE TABLE IF NOT EXISTS mentions(
     created_at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS mentions_user ON mentions(username, read);
+CREATE TABLE IF NOT EXISTS identity_proposals(
+    id INTEGER PRIMARY KEY, text TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    decided_at TEXT NOT NULL DEFAULT '', decided_by TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS rules(
     name TEXT PRIMARY KEY, spec TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
@@ -558,6 +563,47 @@ class Store:
                     (username, channel_id),
                 )
         return cur.rowcount
+
+    # -- identity proposals -------------------------------------------------
+    # The agent proposes; a person decides. Kept as rows rather than applied
+    # silently, so there is always an answer to "why does it think that".
+    def add_identity_proposal(self, text: str, reason: str) -> int:
+        with self.db:
+            cur = self.db.execute(
+                "INSERT INTO identity_proposals(text, reason, created_at) VALUES(?,?,?)",
+                (text, reason, _now()),
+            )
+        return cur.lastrowid or 0
+
+    def identity_proposals(self, status: str = "pending") -> list[sqlite3.Row]:
+        if status:
+            return self.db.execute(
+                "SELECT id, text, reason, created_at, status FROM identity_proposals "
+                "WHERE status=? ORDER BY id DESC LIMIT 50",
+                (status,),
+            ).fetchall()
+        return self.db.execute(
+            "SELECT id, text, reason, created_at, status FROM identity_proposals "
+            "ORDER BY id DESC LIMIT 50"
+        ).fetchall()
+
+    def get_identity_proposal(self, proposal_id: int) -> sqlite3.Row | None:
+        return self.db.execute(
+            "SELECT id, text, reason, created_at, status FROM identity_proposals "
+            "WHERE id=?",
+            (proposal_id,),
+        ).fetchone()
+
+    def decide_identity_proposal(
+        self, proposal_id: int, status: str, who: str
+    ) -> bool:
+        with self.db:
+            cur = self.db.execute(
+                "UPDATE identity_proposals SET status=?, decided_at=?, decided_by=? "
+                "WHERE id=? AND status='pending'",
+                (status, _now(), who, proposal_id),
+            )
+        return cur.rowcount > 0
 
     # -- rules and jobs ---------------------------------------------------
     def list_rules(self) -> list[sqlite3.Row]:
