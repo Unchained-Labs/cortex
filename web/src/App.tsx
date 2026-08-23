@@ -8,7 +8,7 @@ import Chat from "./views/Chat";
 import Search from "./views/Search";
 import Channels from "./views/Channels";
 import Vault from "./views/Vault";
-import ImportView from "./views/ImportView";
+import Memory from "./views/Memory";
 import Extend from "./views/Extend";
 import Automation from "./views/Automation";
 import Admin from "./views/Admin";
@@ -20,9 +20,9 @@ export type Tab =
   | "today"
   | "chat"
   | "search"
+  | "memory"
   | "channels"
   | "vault"
-  | "import"
   | "extend"
   | "automation"
   | "admin";
@@ -42,9 +42,9 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "today", label: "Today" },
   { id: "chat", label: "Chat" },
   { id: "search", label: "Search" },
+  { id: "memory", label: "Memory" },
   { id: "channels", label: "Channels" },
   { id: "vault", label: "Vault" },
-  { id: "import", label: "Import" },
   { id: "extend", label: "Extend", adminOnly: true },
   { id: "automation", label: "Automation", adminOnly: true },
   { id: "admin", label: "Admin", adminOnly: true },
@@ -64,6 +64,8 @@ export default function App() {
   const [capturing, setCapturing] = useState(false);
   const [digestKey, setDigestKey] = useState(0); // bumped to re-read the digest
   const [searchFocus, setSearchFocus] = useState(0);
+  /** bumped to open the Vault view with its import panel already up */
+  const [importNonce, setImportNonce] = useState(0);
   const [shortcuts, setShortcuts] = useState(false);
   const [account, setAccount] = useState(false);
   const capturingRef = useRef(capturing);
@@ -83,6 +85,12 @@ export default function App() {
     if (user) wsConnect();
     return () => wsDisconnect();
   }, [user]);
+
+  // Import lives inside Vault now; Today's card still needs a way in.
+  const openImport = useCallback(() => {
+    setTab("vault");
+    setImportNonce(Date.now());
+  }, []);
 
   const openSearch = useCallback(() => {
     setTab("search");
@@ -238,7 +246,7 @@ export default function App() {
             isAdmin={isAdmin}
             onVaultPath={openVaultPath}
             onCapture={() => setCapturing(true)}
-            onImport={() => setTab("import")}
+            onImport={openImport}
             onExtend={() => setTab("extend")}
           />
         </div>
@@ -259,6 +267,14 @@ export default function App() {
           <Search focusNonce={searchFocus} onVaultPath={openVaultPath} />
         </div>
         <div
+          className={tab === "memory" ? "view" : "view hidden"}
+          role="tabpanel"
+          id="panel-memory"
+          aria-labelledby="tab-memory"
+        >
+          <Memory active={tab === "memory"} />
+        </div>
+        <div
           className={tab === "channels" ? "view" : "view hidden"}
           role="tabpanel"
           id="panel-channels"
@@ -272,15 +288,7 @@ export default function App() {
           id="panel-vault"
           aria-labelledby="tab-vault"
         >
-          <Vault target={vaultTarget} />
-        </div>
-        <div
-          className={tab === "import" ? "view" : "view hidden"}
-          role="tabpanel"
-          id="panel-import"
-          aria-labelledby="tab-import"
-        >
-          <ImportView />
+          <Vault target={vaultTarget} importNonce={importNonce} />
         </div>
         {isAdmin && (
           <div

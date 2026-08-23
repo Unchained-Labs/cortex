@@ -106,6 +106,21 @@ same trust level as a stdio MCP server. The UI must say this where code is edite
   then a re-index is queued.
 - `DELETE /api/extensions/{kind}/{name}` → `{ok}`. 422 for a cortex.yaml-defined MCP server.
 
+### Memory (any signed-in user)
+
+What the brain remembers, typed. Kinds: `person`, `project`, `preference`, `goal`,
+`fact` — untyped memories are facts. Not admin-only: a brain that quietly believes a
+wrong thing about someone is worse than one that believes nothing, so anyone who can
+see a memory can correct it.
+
+- `GET /api/memory?kind=` → `{kinds, memories: [{id, kind, subject, body, source,
+  created_at}]}`, grouped-friendly (already ordered by kind then subject).
+- `POST /api/memory {body, kind?, subject?}` → `{id, kind}`; 422 on empty body or an
+  unknown kind.
+- `PUT /api/memory/{id} {body, kind, subject}` → `{ok}`; 404 if it is gone.
+- `DELETE /api/memory/{id}` → `{ok}` (retires it; the row is kept for the audit trail
+  but leaves every read path).
+
 ### Rules and scheduled jobs (role=admin only)
 
 **Rules** tidy the vault: match notes, then move, tag or archive them. They move
@@ -187,6 +202,15 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
+
+### Memory (v0.4, any user)
+
+A **Memory** tab listing what the brain knows, grouped by kind, each row showing its
+subject and body with inline edit and a forget button, plus an add form (body, kind
+dropdown, subject). This is the correction surface — it must be easy to fix a wrong
+memory, not just read one. Fold **Import** into the Vault view at the same time (it is
+a once-a-year vault operation occupying a top-level slot), so the tab count does not
+grow.
 
 ### Extend, redesigned (v0.4)
 

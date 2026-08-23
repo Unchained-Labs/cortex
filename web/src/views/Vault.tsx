@@ -8,6 +8,7 @@ import { useUnloadGuard } from "../lib/modal";
 import { splitFrontmatter, toggleTask, resolveTarget, isImagePath } from "../lib/obsidian";
 import Editor from "../components/Editor";
 import Markdown from "../components/Markdown";
+import ImportDrawer from "../components/ImportDrawer";
 
 type Mode = "edit" | "preview";
 
@@ -67,7 +68,14 @@ function TreeView({
   );
 }
 
-export default function Vault({ target }: { target: VaultTarget | null }) {
+export default function Vault({
+  target,
+  importNonce,
+}: {
+  target: VaultTarget | null;
+  /** bumped when something outside asks for the import panel (Today's card) */
+  importNonce: number;
+}) {
   const [vaults, setVaults] = useState<VaultMeta[]>([]);
   const [vault, setVault] = useState<string | null>(null);
   const [files, setFiles] = useState<VaultFile[]>([]);
@@ -81,6 +89,7 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newPath, setNewPath] = useState<string | null>(null); // null = closed
+  const [importing, setImporting] = useState(false);
   /** a `sources/…` file opened through /api/file: readable, never writable */
   const [source, setSource] = useState<IndexedFile | null>(null);
   const seenNonce = useRef(0);
@@ -214,6 +223,26 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
     if (target.vault === "") void openSource(target.key);
     else void selectVault(target.vault, target.path);
   }, [target, selectVault, openSource, confirmDiscard]);
+
+  // Today's "Import your notes" card sends people here, panel already open.
+  const seenImport = useRef(0);
+  useEffect(() => {
+    if (importNonce && importNonce !== seenImport.current) {
+      seenImport.current = importNonce;
+      setImporting(true);
+    }
+  }, [importNonce]);
+
+  /** Files landed in a vault: the tree behind the panel is now stale. */
+  const afterImport = useCallback(
+    (into: string) => {
+      apiGet<{ vaults: VaultMeta[] }>("/api/vaults")
+        .then((r) => setVaults(r.vaults))
+        .catch(() => {});
+      if (into === vaultRef.current) void loadTree(into).catch(() => {});
+    },
+    [loadTree],
+  );
 
   // Another session saved a file we may have open.
   useEffect(
@@ -402,6 +431,13 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
             +
           </button>
         </div>
+        {/* Bringing notes in belongs beside the vault it fills, not in a tab
+            of its own — it is something you do once, not somewhere you live. */}
+        <div className="side-sub">
+          <button className="btn btn-sm" onClick={() => setImporting(true)}>
+            Import…
+          </button>
+        </div>
         {newPath !== null && (
           <form className="side-form" onSubmit={createFile}>
             <input
@@ -571,6 +607,14 @@ export default function Vault({ target }: { target: VaultTarget | null }) {
           </div>
         )}
       </section>
+
+      {importing && (
+        <ImportDrawer
+          vault={vault}
+          onClose={() => setImporting(false)}
+          onImported={afterImport}
+        />
+      )}
     </div>
   );
 }

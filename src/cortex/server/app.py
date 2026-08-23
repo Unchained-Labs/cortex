@@ -117,6 +117,12 @@ class PasswordReset(BaseModel):
     new_password: str
 
 
+class MemoryBody(BaseModel):
+    body: str
+    kind: str = "fact"
+    subject: str = ""
+
+
 class MentionsRead(BaseModel):
     channel_id: int | None = None
 
@@ -510,6 +516,81 @@ def build_app(brain: Brain) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         await _after_write(target, rel)
         return {"vault": target, "path": rel, "line": lineno, "text": text}
+
+    # -- memory -----------------------------------------------------------
+    #
+    # Everyone can see and correct what the brain believes. A brain that
+    # quietly remembers a wrong thing about a person is worse than one that
+    # remembers nothing, so none of this is admin-only.
+
+    @app.get("/api/memory")
+    def list_memory(user: dict = Depends(current_user), kind: str = "") -> dict:
+        from cortex.memory import facts as factsmod
+
+        try:
+            rows = brain.store.facts_by_kind(
+                factsmod.normalise_kind(kind) if kind else ""
+            )
+        except factsmod.MemoryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {
+            "kinds": list(factsmod.KINDS),
+            "memories": [
+                {
+                    "id": r["id"],
+                    "kind": r["kind"],
+                    "subject": r["subject"],
+                    "body": r["body"],
+                    "source": r["source"],
+                    "created_at": r["created_at"],
+                }
+                for r in rows
+            ],
+        }
+
+    @app.post("/api/memory")
+    def add_memory(body: MemoryBody, user: dict = Depends(current_user)) -> dict:
+        from cortex.memory import facts as factsmod
+
+        text = body.body.strip()
+        if not text:
+            raise HTTPException(status_code=422, detail="a memory needs a body")
+        try:
+            kind = factsmod.normalise_kind(body.kind)
+        except factsmod.MemoryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        memory_id = brain.store.add_fact(
+            text,
+            f"dashboard:{user['username']}",
+            kind=kind,
+            subject=factsmod.normalise_subject(body.subject),
+        )
+        return {"id": memory_id, "kind": kind}
+
+    @app.put("/api/memory/{memory_id}")
+    def edit_memory(
+        memory_id: int, body: MemoryBody, user: dict = Depends(current_user)
+    ) -> dict:
+        from cortex.memory import facts as factsmod
+
+        text = body.body.strip()
+        if not text:
+            raise HTTPException(status_code=422, detail="a memory needs a body")
+        try:
+            kind = factsmod.normalise_kind(body.kind)
+        except factsmod.MemoryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not brain.store.update_fact(
+            memory_id, text, kind, factsmod.normalise_subject(body.subject)
+        ):
+            raise HTTPException(status_code=404, detail="no such memory")
+        return {"ok": True}
+
+    @app.delete("/api/memory/{memory_id}")
+    def forget_memory(memory_id: int, user: dict = Depends(current_user)) -> dict:
+        if not brain.store.retire_fact(memory_id):
+            raise HTTPException(status_code=404, detail="no such memory")
+        return {"ok": True}
 
     # -- agent chat -------------------------------------------------------
 
