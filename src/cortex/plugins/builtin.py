@@ -88,21 +88,65 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         )
         return "\n".join(lines)
 
-    def remember(fact: str, source: str = "") -> str:
+    def remember(fact: str, source: str = "", kind: str = "", subject: str = "") -> str:
+        from cortex.memory import facts as factsmod
+
         fact = fact.strip()
         if not fact:
             return "Refusing to remember an empty fact."
-        who = scope.current_user.get() or "owner"
-        fact_id = brain.store.add_fact(fact, source or f"chat:{who}")
-        return f"Remembered (fact #{fact_id}, visible to the whole brain): {fact}"
-
-    def recall(query: str = "") -> str:
-        rows = (
-            brain.store.search_facts(query) if query.strip() else brain.store.recent_facts()
+        try:
+            kind = factsmod.normalise_kind(kind)
+        except factsmod.MemoryError as exc:
+            return str(exc)
+        subject = factsmod.normalise_subject(subject) or (
+            factsmod.guess_subject(fact) if kind == "person" else ""
         )
-        if not rows:
-            return "No remembered facts match." if query else "Nothing has been remembered yet."
-        return "\n".join(f"#{r['id']} [{r['created_at']}] {r['body']}" for r in rows)
+        who = scope.current_user.get() or "owner"
+        fact_id = brain.store.add_fact(
+            fact, source or f"chat:{who}", kind=kind, subject=subject
+        )
+        about = f" about {subject}" if subject else ""
+        return (
+            f"Remembered as a {kind}{about} (#{fact_id}, visible to the whole brain): {fact}"
+        )
+
+    def _to_memories(rows) -> list:
+        from cortex.memory.facts import Memory
+
+        return [
+            Memory(
+                id=r["id"],
+                kind=r["kind"] if "kind" in r.keys() else "fact",
+                subject=r["subject"] if "subject" in r.keys() else "",
+                body=r["body"],
+                source=r["source"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    def recall(query: str = "", kind: str = "") -> str:
+        from cortex.memory import facts as factsmod
+
+        if kind:
+            try:
+                rows = brain.store.facts_by_kind(factsmod.normalise_kind(kind))
+            except factsmod.MemoryError as exc:
+                return str(exc)
+        elif query.strip():
+            rows = brain.store.search_facts(query)
+        else:
+            rows = brain.store.facts_by_kind()
+        return factsmod.format_memories(_to_memories(rows), query)
+
+    def recall_about(subject: str) -> str:
+        """Everything known about one person, project or thing."""
+        from cortex.memory import facts as factsmod
+
+        if not subject.strip():
+            return "Which person or thing?"
+        rows = brain.store.facts_about(subject)
+        return factsmod.format_memories(_to_memories(rows), subject)
 
     def current_time() -> str:
         return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -240,6 +284,18 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             ),
             parameters={
                 "fact": {"type": "string", "description": "One self-contained sentence."},
+                "kind": {
+                    "type": "string",
+                    "description": (
+                        "person, project, preference, goal, or fact. Use person for who "
+                        "someone is or how to reach them, project for something ongoing, "
+                        "preference for how this household likes things done."
+                    ),
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Who or what it is about, e.g. a name.",
+                },
                 "source": {"type": "string", "description": "Where it came from."},
             },
             required=("fact",),
@@ -249,9 +305,27 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
     registry.register(
         ToolPlugin(
             name="recall",
-            description="Search remembered facts; with no query, list the most recent.",
-            parameters={"query": {"type": "string", "description": "Optional filter."}},
+            description=(
+                "What the brain remembers, grouped by kind. Filter with a query, or "
+                "with kind=person/project/preference/goal/fact."
+            ),
+            parameters={
+                "query": {"type": "string", "description": "Optional search."},
+                "kind": {"type": "string", "description": "Optional kind filter."},
+            },
             func=recall,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="recall_about",
+            description=(
+                "Everything remembered about one person, project or thing. Use this "
+                "when the user names someone — it beats searching prose."
+            ),
+            parameters={"subject": {"type": "string", "description": "A name or topic."}},
+            required=("subject",),
+            func=recall_about,
         )
     )
     registry.register(

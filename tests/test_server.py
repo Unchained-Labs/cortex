@@ -535,3 +535,42 @@ def test_suggestions_carry_their_own_sentence(client):
         assert rule["describes"]
     for job in client.get("/api/jobs").json()["suggested"]:
         assert job["describes"]
+
+
+def test_memory_is_visible_and_correctable_by_anyone(client, brain):
+    """Memory is brain-wide, so correcting it is not an admin privilege —
+    a brain that quietly believes a wrong thing is worse than one that
+    believes nothing."""
+    signin(client, "sam")
+    listing = client.get("/api/memory").json()
+    assert listing["memories"] == []
+    assert "person" in listing["kinds"]
+
+    made = client.post("/api/memory", json={
+        "body": "allergic to shellfish", "kind": "person", "subject": "Priya",
+    })
+    assert made.status_code == 200
+    memory_id = made.json()["id"]
+
+    people = client.get("/api/memory", params={"kind": "person"}).json()["memories"]
+    assert len(people) == 1 and people[0]["subject"] == "Priya"
+    assert people[0]["source"] == "dashboard:sam"
+
+    fixed = client.put(f"/api/memory/{memory_id}", json={
+        "body": "allergic to peanuts", "kind": "person", "subject": "Priya",
+    })
+    assert fixed.status_code == 200
+    assert client.get("/api/memory").json()["memories"][0]["body"] == "allergic to peanuts"
+
+    assert client.delete(f"/api/memory/{memory_id}").json()["ok"] is True
+    assert client.get("/api/memory").json()["memories"] == []
+    assert client.delete(f"/api/memory/{memory_id}").status_code == 404
+
+
+def test_memory_rejects_nonsense(client):
+    signin(client, "sam")
+    assert client.post("/api/memory", json={"body": "   "}).status_code == 422
+    assert client.post(
+        "/api/memory", json={"body": "x", "kind": "enemy"}
+    ).status_code == 422
+    assert client.get("/api/memory", params={"kind": "enemy"}).status_code == 422

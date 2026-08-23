@@ -138,6 +138,26 @@ export interface ChannelMessage {
   replaces?: string;
 }
 
+/**
+ * `GET /api/memory` — one thing the brain believes. `source` says who or what
+ * recorded it (`chat:erwin`, `dashboard:sam`), which is the difference between
+ * "I told it that" and "it decided that".
+ */
+export interface Memory {
+  id: number;
+  kind: string;
+  subject: string;
+  body: string;
+  source: string;
+  created_at: string;
+}
+
+/** Already ordered by kind then subject, so the view groups without sorting. */
+export interface MemoryList {
+  kinds: string[];
+  memories: Memory[];
+}
+
 export interface AdminUser {
   username: string;
   role: string;

@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS vectors(
 CREATE TABLE IF NOT EXISTS facts(
     id INTEGER PRIMARY KEY,
     body TEXT NOT NULL, source TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL, retired INTEGER NOT NULL DEFAULT 0
+    created_at TEXT NOT NULL, retired INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT 'fact', subject TEXT NOT NULL DEFAULT ''
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
     body, content='facts', content_rowid='id'
@@ -167,7 +168,26 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(_SCHEMA)
+        self._migrate()
         self.db.commit()
+
+    def _migrate(self) -> None:
+        """Bring an older database up to the current shape.
+
+        Memories written before kinds existed become plain facts with no
+        subject, which is exactly what they were — nothing is dropped and
+        nothing is guessed at on the way through.
+        """
+        columns = {r["name"] for r in self.db.execute("PRAGMA table_info(facts)")}
+        if "kind" not in columns:
+            self.db.execute(
+                "ALTER TABLE facts ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact'"
+            )
+        if "subject" not in columns:
+            self.db.execute(
+                "ALTER TABLE facts ADD COLUMN subject TEXT NOT NULL DEFAULT ''"
+            )
+        self.db.execute("CREATE INDEX IF NOT EXISTS facts_kind ON facts(kind, retired)")
 
     def close(self) -> None:
         self.db.close()
@@ -310,20 +330,65 @@ class Store:
         return {r["id"]: r for r in rows}
 
     # -- facts ------------------------------------------------------------
-    def add_fact(self, body: str, source: str = "") -> int:
+    def add_fact(
+        self, body: str, source: str = "", kind: str = "fact", subject: str = ""
+    ) -> int:
         with self.db:
             cur = self.db.execute(
-                "INSERT INTO facts(body, source, created_at) VALUES(?,?,?)",
-                (body, source, _now()),
+                "INSERT INTO facts(body, source, created_at, kind, subject) "
+                "VALUES(?,?,?,?,?)",
+                (body, source, _now(), kind, subject),
             )
         return cur.lastrowid or 0
+
+    def update_fact(self, fact_id: int, body: str, kind: str, subject: str) -> bool:
+        with self.db:
+            cur = self.db.execute(
+                "UPDATE facts SET body=?, kind=?, subject=? WHERE id=? AND retired=0",
+                (body, kind, subject, fact_id),
+            )
+        return cur.rowcount > 0
+
+    def retire_fact(self, fact_id: int) -> bool:
+        """Forget it. Retiring rather than deleting keeps the row for the
+        audit trail while removing it from every read path."""
+        with self.db:
+            cur = self.db.execute(
+                "UPDATE facts SET retired=1 WHERE id=? AND retired=0", (fact_id,)
+            )
+        return cur.rowcount > 0
+
+    def facts_by_kind(self, kind: str = "", limit: int = 200) -> list[sqlite3.Row]:
+        if kind:
+            return self.db.execute(
+                "SELECT id, body, source, created_at, kind, subject FROM facts "
+                "WHERE retired=0 AND kind=? ORDER BY kind, subject, id DESC LIMIT ?",
+                (kind, limit),
+            ).fetchall()
+        return self.db.execute(
+            "SELECT id, body, source, created_at, kind, subject FROM facts "
+            "WHERE retired=0 ORDER BY kind, subject, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    def facts_about(self, subject: str, limit: int = 50) -> list[sqlite3.Row]:
+        """Everything known about one subject, matched loosely — people are
+        written down as "Priya" one day and "Priya Okonkwo" the next."""
+        like = f"%{subject.strip()}%"
+        return self.db.execute(
+            "SELECT id, body, source, created_at, kind, subject FROM facts "
+            "WHERE retired=0 AND (subject LIKE ? OR body LIKE ?) "
+            "ORDER BY kind, id DESC LIMIT ?",
+            (like, like, limit),
+        ).fetchall()
 
     def search_facts(self, query: str, k: int = 10) -> list[sqlite3.Row]:
         q = fts_query(query)
         if not q:
             return []
         return self.db.execute(
-            "SELECT f.id, f.body, f.source, f.created_at, bm25(facts_fts) AS rank "
+            "SELECT f.id, f.body, f.source, f.created_at, f.kind, f.subject, "
+            "bm25(facts_fts) AS rank "
             "FROM facts_fts JOIN facts f ON f.id = facts_fts.rowid "
             "WHERE facts_fts MATCH ? AND f.retired=0 ORDER BY rank LIMIT ?",
             (q, k),
@@ -331,8 +396,8 @@ class Store:
 
     def recent_facts(self, k: int = 20) -> list[sqlite3.Row]:
         return self.db.execute(
-            "SELECT id, body, source, created_at FROM facts WHERE retired=0 "
-            "ORDER BY id DESC LIMIT ?",
+            "SELECT id, body, source, created_at, kind, subject FROM facts "
+            "WHERE retired=0 ORDER BY id DESC LIMIT ?",
             (k,),
         ).fetchall()
 
