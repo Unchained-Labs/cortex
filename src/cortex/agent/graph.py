@@ -157,8 +157,12 @@ class AgentRuntime:
             str(self.brain.config.state_dir / "checkpoints.db")
         )
         saver = await self._saver_cm.__aenter__()
+        from cortex import identity as identitymod
+
         prompt = build_system_prompt(
-            self.brain.config.name, self.brain.config.persona, self.brain.skills
+            self.brain.config.name,
+            identitymod.effective(self.brain.config),
+            self.brain.skills,
         )
         self.agent = create_react_agent(model, tools, prompt=prompt, checkpointer=saver)
         return self

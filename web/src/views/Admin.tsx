@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import type { AdminUser, BrainInfo } from "../types";
+import IdentitySection from "../components/IdentitySection";
 
 /** `2026-08-21T16:04:46+00:00` → `21 Aug 2026`. */
 function readableDate(iso: string): string {
@@ -312,6 +313,8 @@ export default function Admin({ self, active }: { self: string; active: boolean 
             )}
           </section>
         </div>
+
+        <IdentitySection active={active} />
       </div>
     </div>
   );

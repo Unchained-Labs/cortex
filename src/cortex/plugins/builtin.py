@@ -211,6 +211,34 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         words = len(clip.text.split())
         return f"Saved {clip.title!r} ({words} words) to vaults/{target}/{rel}"
 
+    def propose_identity_change(text: str, reason: str) -> str:
+        from cortex import identity as identitymod
+
+        text = text.strip()
+        if not text:
+            return "A proposal needs the full replacement text."
+        if len(text) > identitymod.MAX_IDENTITY_CHARS:
+            return (
+                f"That is {len(text)} characters; identity is read into every "
+                f"conversation, so keep it under {identitymod.MAX_IDENTITY_CHARS}."
+            )
+        if not reason.strip():
+            return (
+                "Say why the change is worth making — a proposal without a "
+                "reason is not reviewable."
+            )
+        proposal_id = brain.store.add_identity_proposal(text, reason.strip())
+        return (
+            f"Proposed (#{proposal_id}). It changes nothing until somebody accepts it "
+            "in the dashboard — tell the user it is waiting for them."
+        )
+
+    def read_identity() -> str:
+        from cortex import identity as identitymod
+
+        body = identitymod.read(brain.config).strip()
+        return body or "There is no identity note yet."
+
     def daily_digest() -> str:
         from cortex.digest import build_digest, format_digest
 
@@ -382,6 +410,33 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             },
             required=("url",),
             func=clip_url,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="read_identity",
+            description=(
+                "The brain's identity note — who it is for and how they like things "
+                "done. Read it before proposing a change to it."
+            ),
+            func=read_identity,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="propose_identity_change",
+            description=(
+                "Propose a rewrite of the identity note for a human to accept or "
+                "discard. You cannot change it yourself. Use this when the user tells "
+                "you something that should always be true, not just today. Pass the "
+                "COMPLETE new text, not a fragment."
+            ),
+            parameters={
+                "text": {"type": "string", "description": "The complete replacement."},
+                "reason": {"type": "string", "description": "Why it is worth changing."},
+            },
+            required=("text", "reason"),
+            func=propose_identity_change,
         )
     )
     registry.register(
