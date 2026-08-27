@@ -397,18 +397,53 @@ def build_app(brain: Brain) -> FastAPI:
         extra = [p.name for p in brain.config.extra_paths if p.is_dir()]
         return scope.user_prefixes(user["username"], extra)
 
-    @app.post("/api/auth/login")
-    def login(body: LoginRequest, response: Response) -> dict:
-        row = brain.store.get_user(body.username.strip().lower())
-        if row is None or not auth.verify_password(body.password, row["pw_hash"], row["salt"]):
-            raise HTTPException(status_code=401, detail="wrong username or password")
+    # One throttle per app instance. In-process is the right scope: cortex is a
+    # single-process self-hosted server, and a counter that outlived a restart
+    # would lock people out of their own house after a crash.
+    throttle = auth.Throttle()
+
+    def set_session_cookie(request: Request, response: Response, username: str) -> None:
+        """Mint a session cookie, marked `secure` when the connection deserves it.
+
+        The quick start says `cortex serve --host 0.0.0.0`, so the intended
+        deployment is a LAN — where a cookie without this travels in cleartext.
+        It is conditional rather than always-on because setting `secure` on plain
+        HTTP means the browser silently drops the cookie and nobody can sign in.
+        """
+        forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+        https = (forwarded or request.url.scheme) == "https"
         response.set_cookie(
             auth.SESSION_COOKIE,
-            auth.mint_session(secret, row["username"]),
+            auth.mint_session(secret, username),
             httponly=True,
             samesite="lax",
+            secure=https,
             max_age=auth.SESSION_DAYS * 86400,
         )
+
+    @app.post("/api/auth/login")
+    def login(body: LoginRequest, request: Request, response: Response) -> dict:
+        username = body.username.strip().lower()
+        # Keyed on client and username together: on username alone anyone could
+        # lock a housemate out, on address alone one bad client wedges everyone
+        # behind the same router.
+        key = f"{request.client.host if request.client else '?'}|{username}"
+
+        wait = throttle.retry_after(key)
+        if wait > 0:
+            raise HTTPException(
+                status_code=429,
+                detail="too many sign-in attempts — wait a few minutes and try again",
+                headers={"Retry-After": str(int(wait) + 1)},
+            )
+
+        row = brain.store.get_user(username)
+        if row is None or not auth.verify_password(body.password, row["pw_hash"], row["salt"]):
+            throttle.record_failure(key)
+            raise HTTPException(status_code=401, detail="wrong username or password")
+
+        throttle.clear(key)
+        set_session_cookie(request, response, row["username"])
         return {"username": row["username"], "role": row["role"]}
 
     @app.post("/api/auth/logout")
@@ -422,7 +457,10 @@ def build_app(brain: Brain) -> FastAPI:
 
     @app.post("/api/me/password")
     def change_password(
-        body: PasswordChange, response: Response, user: dict = Depends(current_user)
+        body: PasswordChange,
+        request: Request,
+        response: Response,
+        user: dict = Depends(current_user),
     ) -> dict:
         """Anyone can change their own password, knowing the current one."""
         row = brain.store.get_user(user["username"])
@@ -436,13 +474,7 @@ def build_app(brain: Brain) -> FastAPI:
         brain.store.set_password(user["username"], pw_hash, salt)
         # Re-mint: the old cookie stays valid otherwise, which is not what
         # "I changed my password" is supposed to mean.
-        response.set_cookie(
-            auth.SESSION_COOKIE,
-            auth.mint_session(secret, user["username"]),
-            httponly=True,
-            samesite="lax",
-            max_age=auth.SESSION_DAYS * 86400,
-        )
+        set_session_cookie(request, response, user["username"])
         return {"ok": True}
 
     # -- info / search ----------------------------------------------------

@@ -652,6 +652,24 @@ def cmd_ext(args: argparse.Namespace) -> None:
     brain.close()
 
 
+def _read_password(args: argparse.Namespace, prompt: str) -> str:
+    """A password, from stdin when asked or from the terminal otherwise.
+
+    `--password-stdin` exists because `getpass` needs a terminal, which made
+    every form of automated provisioning impossible — a container's first run, a
+    CI fixture, a setup script. Reading stdin rather than taking a `--password`
+    flag keeps it out of the process list and out of shell history, which is the
+    same reason `docker login` does it this way.
+    """
+    if getattr(args, "password_stdin", False):
+        password = sys.stdin.readline().rstrip("\n")
+    else:
+        password = getpass.getpass(prompt)
+    if len(password) < 8:
+        sys.exit("error: password must be 8+ characters")
+    return password
+
+
 def cmd_users(args: argparse.Namespace) -> None:
     brain = _brain(args)
     if args.action == "add":
@@ -663,9 +681,7 @@ def cmd_users(args: argparse.Namespace) -> None:
             sys.exit(f"error: {exc}")
         if brain.store.get_user(username):
             sys.exit(f"user {username!r} exists")
-        password = getpass.getpass("Password (8+ chars): ")
-        if len(password) < 8:
-            sys.exit("error: password must be 8+ characters")
+        password = _read_password(args, "Password (8+ chars): ")
         pw_hash, salt = auth.hash_password(password)
         brain.store.add_user(username, pw_hash, salt, args.role)
         (brain.config.vaults_dir / username).mkdir(parents=True, exist_ok=True)
@@ -681,9 +697,7 @@ def cmd_users(args: argparse.Namespace) -> None:
             sys.exit("usage: cortex users passwd <name>")
         if brain.store.get_user(args.name) is None:
             sys.exit(f"no user named {args.name!r}")
-        password = getpass.getpass("New password (8+ chars): ")
-        if len(password) < 8:
-            sys.exit("error: password must be 8+ characters")
+        password = _read_password(args, "New password (8+ chars): ")
         pw_hash, salt = auth.hash_password(password)
         brain.store.set_password(args.name, pw_hash, salt)
         print(f"password changed for {args.name}")
@@ -837,6 +851,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("action", choices=["add", "list", "passwd", "remove"])
     p.add_argument("name", nargs="?", default="")
     p.add_argument("--role", choices=["admin", "member"], default="member")
+    p.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="read the password from stdin instead of prompting, for scripts and containers",
+    )
     p.add_argument("--brain")
     p.set_defaults(func=cmd_users)
 

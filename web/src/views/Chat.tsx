@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet } from "../api";
 import { chatStream } from "../sse";
-import type { ThreadMeta, HistoryMessage } from "../types";
+import type { ThreadMeta, HistoryMessage, Digest, BrainInfo } from "../types";
 import Markdown from "../components/Markdown";
 
 interface ToolLine {
@@ -105,8 +105,54 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
     setError(null);
   };
 
-  const send = async () => {
-    const message = input.trim();
+  // What this brain can actually be asked about, and what will answer.
+  const [openers, setOpeners] = useState<string[]>([]);
+  const [model, setModel] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void apiGet<BrainInfo>("/api/info")
+      .then((info) => {
+        if (!cancelled) setModel(info.chat_model || "");
+      })
+      .catch(() => {
+        /* the model line is a courtesy */
+      });
+
+    void apiGet<Digest>("/api/digest")
+      .then((d) => {
+        if (cancelled) return;
+        const out: string[] = [];
+        const next = d.events?.[0];
+        if (next) out.push(`When is ${next.title}?`);
+        const task = d.tasks?.[0];
+        if (task) out.push(`What is left to do about ${task.text}?`);
+        // A note someone wrote, named by its file stem. Deliberately not the
+        // generated ones: a calendar file is called 2026-08-27-dentist, and
+        // "what we know about 2026 08 27 dentist" is not a question anyone asks.
+        const subject = (path: string) =>
+          (path.split("/").pop() ?? "").replace(/\.md$/, "").replace(/^[\d-]+/, "");
+        const changed = d.changed?.find(
+          (c) => c.path.startsWith("vaults/") && c.path.endsWith(".md") && /[a-z]{3}/i.test(subject(c.path)),
+        );
+        if (changed) {
+          const stem = subject(changed.path).replace(/[-_]/g, " ").trim();
+          if (stem) out.push(`Summarise what we know about ${stem}.`);
+        }
+        setOpeners(out.slice(0, 3));
+      })
+      .catch(() => {
+        /* no openers is a fine outcome; an invented one is not */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const send = async (preset?: string) => {
+    const message = (preset ?? input).trim();
     if (!message || stream) return;
     setInput("");
     setError(null);
@@ -225,6 +271,31 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
                 Ask the agent anything about your vaults. Cited file paths open in the Vault
                 view.
               </p>
+              {/* Openers built from what this brain actually holds. "Ask
+                  anything" over an empty room is the hardest possible start,
+                  and the brain has just indexed the material to suggest from.
+                  Nothing is shown when there is nothing real to offer — an
+                  invented example would send someone to a note that is not
+                  there. */}
+              {openers.length > 0 && (
+                <div className="openers">
+                  {openers.map((o) => (
+                    <button
+                      key={o}
+                      type="button"
+                      className="btn opener"
+                      onClick={() => send(o)}
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {model && (
+                <p className="pane-model muted">
+                  Answering with <code>{model}</code>, on your own machine.
+                </p>
+              )}
             </div>
           )}
           {messages.map((m, i) => (

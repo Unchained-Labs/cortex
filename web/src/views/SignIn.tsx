@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiSend, ApiError } from "../api";
 import type { Me } from "../types";
 
@@ -7,6 +7,26 @@ export default function SignIn({ onSignedIn }: { onSignedIn: (me: Me) => void })
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Which brain this is. The card showed the company lockup and the words
+  // "Sign in" and nothing else, so someone arriving at a bookmarked URL had no
+  // way to tell what they were signing into — or which household, if they have
+  // more than one. /health is public and already knows.
+  const [brain, setBrain] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/health")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { brain?: string } | null) => {
+        if (!cancelled && d?.brain) setBrain(d.brain);
+      })
+      .catch(() => {
+        /* the name is a courtesy; sign-in works without it */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +63,7 @@ export default function SignIn({ onSignedIn }: { onSignedIn: (me: Me) => void })
             }
           }}
         />
-        <p className="label">Sign in</p>
+        <p className="label">Sign in{brain ? ` · ${brain}` : ""}</p>
         <label className="field">
           <span>Username</span>
           <input
@@ -66,6 +86,12 @@ export default function SignIn({ onSignedIn }: { onSignedIn: (me: Me) => void })
         <button className="btn primary" type="submit" disabled={busy || !username || !password}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        {/* There is no self-service reset on a self-hosted brain, and saying so
+            is better than leaving someone stuck at a form that cannot help. */}
+        <p className="signin-hint">
+          Forgotten your password? Whoever set this up can reset it with{" "}
+          <code>cortex users passwd {username || "<name>"}</code>.
+        </p>
       </form>
     </div>
   );

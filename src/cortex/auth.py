@@ -86,3 +86,80 @@ def check_session(secret: bytes, token: str, now: float | None = None) -> str | 
     if (now or time.time()) > expiry:
         return None
     return username
+
+
+# ---- sign-in throttling -----------------------------------------------------
+#
+# scrypt at n=2**14 costs an attacker roughly 50-100 ms a guess, which is a
+# speed bump and not a defence. Cortex is meant to be reachable by a whole
+# household, so weak passwords are likely by construction and the guessing is
+# worth making expensive in wall-clock terms too.
+#
+# A fixed window over failures, keyed by client and username together: locking
+# on username alone lets anyone lock a housemate out, and locking on address
+# alone lets one bad client wedge everyone behind the same NAT.
+
+FAILURE_LIMIT = 8
+FAILURE_WINDOW_S = 300.0
+# Failures are only ever recorded for keys that have already reached the login
+# handler, but the table still needs a ceiling: a spray across many usernames
+# should not be able to grow it without bound.
+_MAX_TRACKED = 4096
+
+
+class Throttle:
+    """Counts recent sign-in failures and refuses once there are too many."""
+
+    def __init__(
+        self,
+        limit: int = FAILURE_LIMIT,
+        window_s: float = FAILURE_WINDOW_S,
+        max_tracked: int = _MAX_TRACKED,
+    ) -> None:
+        self.limit = limit
+        self.window_s = window_s
+        self.max_tracked = max_tracked
+        # key -> (failures, window_started_at)
+        self._hits: dict[str, tuple[int, float]] = {}
+
+    def _now(self) -> float:
+        return time.monotonic()
+
+    def _prune(self, now: float) -> None:
+        stale = [k for k, (_, started) in self._hits.items() if now - started >= self.window_s]
+        for k in stale:
+            del self._hits[k]
+        if len(self._hits) > self.max_tracked:
+            # Oldest windows first; these are the closest to expiring anyway.
+            for k, _ in sorted(self._hits.items(), key=lambda kv: kv[1][1])[
+                : len(self._hits) - self.max_tracked
+            ]:
+                del self._hits[k]
+
+    def retry_after(self, key: str) -> float:
+        """Seconds until this key may try again. 0.0 when it may try now."""
+        now = self._now()
+        entry = self._hits.get(key)
+        if entry is None:
+            return 0.0
+        failures, started = entry
+        if now - started >= self.window_s:
+            del self._hits[key]
+            return 0.0
+        if failures < self.limit:
+            return 0.0
+        return self.window_s - (now - started)
+
+    def record_failure(self, key: str) -> None:
+        now = self._now()
+        failures, started = self._hits.get(key, (0, now))
+        if now - started >= self.window_s:
+            failures, started = 0, now
+        self._hits[key] = (failures + 1, started)
+        # After the insert, so the ceiling actually holds: pruning first left
+        # max_tracked entries and then added one more.
+        self._prune(now)
+
+    def clear(self, key: str) -> None:
+        """A correct password forgives the failures before it."""
+        self._hits.pop(key, None)

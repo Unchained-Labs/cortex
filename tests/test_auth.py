@@ -49,3 +49,53 @@ def test_username_rules():
     for bad in ("Shared", "shared", "sources", "a", "has space", "dot.name", "x" * 40):
         with pytest.raises(auth.AuthError):
             auth.validate_username(bad)
+
+
+# ---- sign-in throttling -----------------------------------------------------
+
+
+def test_throttle_allows_up_to_the_limit_then_refuses():
+    t = auth.Throttle(limit=3, window_s=60)
+    key = "10.0.0.4|erwin"
+    for _ in range(3):
+        assert t.retry_after(key) == 0.0
+        t.record_failure(key)
+    assert t.retry_after(key) > 0
+
+
+def test_a_correct_password_forgives_the_failures_before_it():
+    t = auth.Throttle(limit=2, window_s=60)
+    key = "10.0.0.4|erwin"
+    t.record_failure(key)
+    t.record_failure(key)
+    assert t.retry_after(key) > 0
+    t.clear(key)
+    assert t.retry_after(key) == 0.0
+
+
+def test_the_window_expires():
+    t = auth.Throttle(limit=1, window_s=0.01)
+    key = "10.0.0.4|erwin"
+    t.record_failure(key)
+    assert t.retry_after(key) > 0
+    time.sleep(0.02)
+    assert t.retry_after(key) == 0.0
+
+
+def test_one_client_cannot_lock_out_another():
+    """The key is client and username together, on purpose."""
+    t = auth.Throttle(limit=2, window_s=60)
+    for _ in range(3):
+        t.record_failure("10.0.0.9|erwin")
+    assert t.retry_after("10.0.0.9|erwin") > 0
+    # Same user, different machine: unaffected.
+    assert t.retry_after("10.0.0.4|erwin") == 0.0
+    # Same machine, different user: unaffected.
+    assert t.retry_after("10.0.0.9|sam") == 0.0
+
+
+def test_the_table_does_not_grow_without_bound():
+    t = auth.Throttle(limit=5, window_s=600, max_tracked=50)
+    for i in range(500):
+        t.record_failure(f"10.0.0.{i}|erwin")
+    assert len(t._hits) <= 50
