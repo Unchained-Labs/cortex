@@ -1643,3 +1643,34 @@ select { cursor: pointer; }
   .id-editor { height: 14rem; }
   .id-text { max-height: 15rem; }
 }
+
+/* The only route back from a forgotten password on a self-hosted brain. */
+.signin-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ul-faint);
+}
+.signin-hint code {
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+/* Openers in the empty chat pane: real questions about real notes. */
+.openers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ul-space-2);
+  margin-top: var(--ul-space-4);
+}
+.opener {
+  text-align: left;
+  font-size: 13px;
+  max-width: 46ch;
+}
+.pane-model {
+  margin-top: var(--ul-space-4);
+  font-size: 12px;
+}
+.pane-model code { font-size: 11.5px; }

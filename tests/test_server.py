@@ -716,3 +716,65 @@ def test_identity_refuses_a_stale_save(client, brain):
     assert stale.status_code == 409
     assert stale.json()["server_mtime"] > stamp
     assert identitymod.read(brain.config) == "first\n"
+
+
+# ---- sign-in throttling and cookie flags ------------------------------------
+
+
+def test_repeated_wrong_passwords_are_throttled(client):
+    """scrypt alone is a speed bump, not a defence."""
+    for _ in range(8):
+        res = client.post("/api/auth/login", json={"username": "erwin", "password": "wrong"})
+        assert res.status_code == 401
+
+    res = client.post("/api/auth/login", json={"username": "erwin", "password": "wrong"})
+    assert res.status_code == 429
+    assert "Retry-After" in res.headers
+
+    # And the throttle holds even once the password is right, or it would be a
+    # way to distinguish a real password from a wrong one while locked out.
+    res = client.post("/api/auth/login", json={"username": "erwin", "password": "hunter2hunter2"})
+    assert res.status_code == 429
+
+
+def test_a_correct_password_resets_the_count(client):
+    for _ in range(4):
+        client.post("/api/auth/login", json={"username": "erwin", "password": "wrong"})
+    assert signin(client, "erwin")["username"] == "erwin"
+    # Four more would have tripped the limit had the counter not been cleared.
+    for _ in range(4):
+        res = client.post("/api/auth/login", json={"username": "erwin", "password": "wrong"})
+        assert res.status_code == 401
+
+
+def test_throttling_one_user_does_not_lock_out_another(client):
+    for _ in range(9):
+        client.post("/api/auth/login", json={"username": "erwin", "password": "wrong"})
+    assert client.post(
+        "/api/auth/login", json={"username": "erwin", "password": "wrong"}
+    ).status_code == 429
+    # sam shares the client address but not the lockout.
+    assert signin(client, "sam")["username"] == "sam"
+
+
+def test_session_cookie_is_httponly_and_not_secure_over_plain_http(client):
+    res = client.post(
+        "/api/auth/login", json={"username": "erwin", "password": "hunter2hunter2"}
+    )
+    assert res.status_code == 200
+    header = res.headers["set-cookie"]
+    assert "HttpOnly" in header
+    assert "SameSite=lax" in header
+    # Marking it secure over http would make the browser drop it silently and
+    # nobody could sign in at all.
+    assert "Secure" not in header
+
+
+def test_session_cookie_is_secure_behind_a_tls_proxy(client):
+    res = client.post(
+        "/api/auth/login",
+        json={"username": "erwin", "password": "hunter2hunter2"},
+        headers={"x-forwarded-proto": "https"},
+    )
+    assert res.status_code == 200
+    assert "Secure" in res.headers["set-cookie"]

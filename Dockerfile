@@ -17,6 +17,11 @@ COPY src ./src
 COPY --from=web /build/src/cortex/server/webdist ./src/cortex/server/webdist
 RUN pip install --no-cache-dir .
 
+# Not as root: with CORTEX_BRAIN_DIR pointed at a host directory, notes written
+# by a root process land root-owned in a folder the user is meant to edit.
+RUN useradd --create-home --uid 1000 cortex && mkdir -p /brain && chown cortex /brain
+USER cortex
+
 # The brain lives in a volume; SETUP flags create it on first run.
 ENV CORTEX_BRAIN=/brain
 EXPOSE 8642

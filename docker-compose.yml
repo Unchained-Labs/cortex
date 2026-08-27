@@ -4,9 +4,16 @@ services:
   cortex:
     build: .
     ports:
-      - "${CORTEX_PORT:-8642}:8642"
+      # 127.0.0.1, not every interface. On most Docker setups a published port
+      # bypasses the host firewall, and this one serves the household's notes.
+      # To reach it from other machines, put a reverse proxy with TLS in front:
+      # the session cookie is only marked `secure` on an https request.
+      - "127.0.0.1:${CORTEX_PORT:-8642}:8642"
     volumes:
-      - brain:/brain
+      # A named volume by default. Set CORTEX_BRAIN_DIR to a path instead if you
+      # want the notes somewhere you can open with a text editor — which is most
+      # of the point of a self-hosted brain.
+      - ${CORTEX_BRAIN_DIR:-brain}:/brain
     environment:
       CORTEX_BRAIN: /brain
       # Reach a model on the docker host with host.docker.internal
