@@ -6,6 +6,54 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-27
+
+Sign-in is no longer a free guessing loop, and the CLI has tests.
+
+### Security
+
+- **Sign-in is throttled.** Eight failures in five minutes and the key is
+  refused with a `429` and a `Retry-After`. There was no lockout, backoff or
+  throttle before, so scrypt at `n=2**14` was the only cost an attacker paid —
+  roughly 50-100 ms a guess, which is a speed bump, not a defence. The key is
+  client address and username together: on username alone anyone could lock a
+  housemate out, on address alone one bad client wedges everyone behind the
+  same router. A correct password forgives the failures before it.
+- **The session cookie is marked `secure`** when the request arrives over
+  https, honouring `X-Forwarded-Proto` so a TLS reverse proxy counts. The quick
+  start suggests `--host 0.0.0.0`, so the cookie was travelling a LAN in
+  cleartext. It stays unset on plain http, because a browser silently drops a
+  `secure` cookie there and nobody could sign in at all.
+- **The container no longer runs as root.** With the brain bind-mounted from
+  the host, notes written by a root process landed root-owned in a directory
+  the user is meant to edit.
+- **Compose publishes on `127.0.0.1`** rather than every interface, which on
+  most Docker setups bypassed the host firewall.
+
+### Added
+
+- `cortex users add --password-stdin`, so an account can be created without a
+  terminal — a container's first run, a CI fixture, a setup script.
+  `setup --admin-password` already covered the first account but puts the
+  password in `argv`, where `ps` can read it.
+- `CORTEX_BRAIN_DIR` in compose, for keeping the notes in a directory you can
+  open rather than inside a named volume.
+- The sign-in card names the brain it belongs to, and says how a forgotten
+  password gets reset — there is no self-service path on a self-hosted brain,
+  and a form that cannot help should say so.
+- Chat opens with three questions drawn from this brain's own digest, and names
+  the model that will answer. Nothing is suggested when there is nothing real
+  to suggest.
+
+### Tests
+
+- The CLI has them: 26 smoke tests covering every subcommand's help, refusals
+  for unknown subcommands and missing arguments, and `init` / `status` /
+  `today` / `index` / `note` / `users` against a real temporary brain.
+  `cli.py` was 551 statements at 0%; it is now 41%, and the suite is 77%
+  overall, up from 71%.
+
+
 ## [0.4.0] - 2026-08-23
 
 Automation, and the three ideas worth taking from the Second Brain
@@ -234,7 +282,8 @@ the CLI stay `cortex`.
 - The calendar connector does not expand recurrence rules yet.
 - Cortex hosts no model; you bring an endpoint.
 
-[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Unchained-Labs/cortex/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Unchained-Labs/cortex/releases/tag/v0.2.1
