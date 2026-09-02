@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS users(
     username TEXT PRIMARY KEY, pw_hash TEXT NOT NULL, salt TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'member', created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS api_keys(
+    -- Bearer keys for non-browser clients: the MCP endpoint, and anything else
+    -- that cannot hold a session cookie.
+    --
+    -- Only the HASH is stored. A key that can be read back out of the database
+    -- is a key that leaks with a backup, and there is no reason to ever need
+    -- the plaintext again: it is shown once at creation and then unrecoverable,
+    -- which is the same bargain every other token store makes.
+    token_hash TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    username TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT
+);
 CREATE TABLE IF NOT EXISTS channels(
     id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
     created_by TEXT NOT NULL, created_at TEXT NOT NULL
@@ -444,6 +458,42 @@ class Store:
             "SELECT username, pw_hash, salt, role, created_at FROM users WHERE username=?",
             (username,),
         ).fetchone()
+
+    # -- api keys ------------------------------------------------------------
+
+    def add_api_key(self, token_hash: str, name: str, username: str, created_at: str) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO api_keys(token_hash, name, username, created_at) "
+                "VALUES(?,?,?,?)",
+                (token_hash, name, username, created_at),
+            )
+
+    def get_api_key(self, token_hash: str) -> sqlite3.Row | None:
+        return self.db.execute(
+            "SELECT token_hash, name, username, created_at, last_used_at "
+            "FROM api_keys WHERE token_hash=?",
+            (token_hash,),
+        ).fetchone()
+
+    def touch_api_key(self, token_hash: str, when: str) -> None:
+        with self.db:
+            self.db.execute(
+                "UPDATE api_keys SET last_used_at=? WHERE token_hash=?", (when, token_hash)
+            )
+
+    def list_api_keys(self) -> list[sqlite3.Row]:
+        # No token_hash: this feeds a UI and a CLI listing, and neither has any
+        # use for the one column that is worth stealing.
+        return list(self.db.execute(
+            "SELECT name, username, created_at, last_used_at FROM api_keys "
+            "ORDER BY created_at DESC"
+        ))
+
+    def delete_api_key(self, name: str) -> int:
+        with self.db:
+            cur = self.db.execute("DELETE FROM api_keys WHERE name=?", (name,))
+            return cur.rowcount
 
     def set_password(self, username: str, pw_hash: str, salt: str) -> None:
         with self.db:

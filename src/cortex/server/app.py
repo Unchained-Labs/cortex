@@ -1501,6 +1501,20 @@ def build_app(brain: Brain) -> FastAPI:
         except WebSocketDisconnect:
             ws_manager.drop(websocket)
 
+    # -- MCP over HTTP ----------------------------------------------------
+
+    # Mounted rather than routed: the session manager speaks raw ASGI and owns
+    # its own request/response cycle, including streaming. Wrapping it in a
+    # FastAPI route would mean buffering what it is designed not to buffer.
+    #
+    # Its own Bearer auth, checked inside, because `current_user` is a cookie
+    # session and no MCP client has one.
+    from cortex.mcp.http import build_asgi as _build_mcp_asgi
+
+    _mcp_app = _build_mcp_asgi(brain)
+    if _mcp_app is not None:
+        app.mount("/mcp", _mcp_app, name="mcp")
+
     # -- static -----------------------------------------------------------
 
     webdist = _webdist_dir()

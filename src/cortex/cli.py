@@ -670,6 +670,47 @@ def _read_password(args: argparse.Namespace, prompt: str) -> str:
     return password
 
 
+def cmd_keys(args: argparse.Namespace) -> None:
+    """Bearer keys for the MCP endpoint.
+
+    A key acts AS a user — same vault scope, same tools — so issuing one is
+    granting that account to whatever holds the string. That is why `add`
+    requires an existing username rather than inventing an identity: an
+    unattributable write into a shared vault is the thing nobody can undo,
+    because nobody can tell whose it was.
+    """
+    from datetime import datetime, timezone
+
+    brain = _brain(args)
+    if args.action == "add":
+        if not args.name or not args.user:
+            sys.exit("usage: cortex keys add <label> --user <username>")
+        if brain.store.get_user(args.user) is None:
+            sys.exit(f"no user named {args.user!r} — create it with `cortex users add`")
+        token = auth.mint_api_key()
+        brain.store.add_api_key(
+            auth.hash_api_key(token), args.name, args.user,
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
+        # Printed once and never recoverable: only the hash is stored.
+        print(token)
+        print(f"\n  label {args.name}, acting as {args.user}", file=sys.stderr)
+        print("  This is the only time it is shown. Store it now.", file=sys.stderr)
+    elif args.action == "list":
+        rows = brain.store.list_api_keys()
+        if not rows:
+            print("no keys — mint one with `cortex keys add <label> --user <name>`")
+        for row in rows:
+            used = row["last_used_at"] or "never used"
+            print(f"{row['name']}  as {row['username']}  created {row['created_at']}  {used}")
+    elif args.action == "revoke":
+        if not args.name:
+            sys.exit("usage: cortex keys revoke <label>")
+        if brain.store.delete_api_key(args.name) == 0:
+            sys.exit(f"no key labelled {args.name!r}")
+        print(f"revoked {args.name}")
+
+
 def cmd_users(args: argparse.Namespace) -> None:
     brain = _brain(args)
     if args.action == "add":
@@ -846,6 +887,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("name", nargs="?", default="")
     p.add_argument("--brain")
     p.set_defaults(func=cmd_ext)
+
+    p = sub.add_parser("keys", help="manage Bearer keys for the MCP endpoint")
+    p.add_argument("action", choices=["add", "list", "revoke"])
+    p.add_argument("name", nargs="?", default="", help="a label you choose, e.g. leclanker")
+    p.add_argument("--user", default="", help="the account the key acts as")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_keys)
 
     p = sub.add_parser("users", help="manage dashboard accounts")
     p.add_argument("action", choices=["add", "list", "passwd", "remove"])

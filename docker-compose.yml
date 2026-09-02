@@ -13,6 +13,17 @@ services:
       # A named volume by default. Set CORTEX_BRAIN_DIR to a path instead if you
       # want the notes somewhere you can open with a text editor — which is most
       # of the point of a self-hosted brain.
+      #
+      # UPGRADING FROM A ROOT-ERA IMAGE: the image runs as uid 1000, and the
+      # Dockerfile's `chown /brain` applies to the image layer only — a named
+      # volume mounted over it keeps whatever ownership it was created with. A
+      # volume created while the image still ran as root therefore stays
+      # root-owned, and the first container recreated after the switch dies on
+      # "attempt to write a readonly database" with correct-looking permissions
+      # everywhere you would think to check. Fix once:
+      #   docker compose down
+      #   docker run --rm -u 0 -v cortex_brain:/b alpine chown -R 1000:1000 /b
+      #   docker compose up -d
       - ${CORTEX_BRAIN_DIR:-brain}:/brain
     environment:
       CORTEX_BRAIN: /brain

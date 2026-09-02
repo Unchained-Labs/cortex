@@ -8,11 +8,13 @@ rotating the secret file invalidates every session at once.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import re
 import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 SESSION_COOKIE = "cortex_session"
@@ -26,6 +28,52 @@ RESERVED_NAMES = {"shared", "sources", "cortex", "admin-api", "api", "assets", "
 
 class AuthError(ValueError):
     pass
+
+
+#: Prefix on every issued key. Not decoration: it makes a leaked key
+#: greppable in logs and recognisable in a paste, and lets the endpoint tell
+#: "wrong kind of credential" apart from "wrong key".
+API_KEY_PREFIX = "ctx_"
+
+
+def mint_api_key() -> str:
+    """A fresh Bearer key. Shown once; only its hash is ever stored."""
+    return API_KEY_PREFIX + secrets.token_urlsafe(32)
+
+
+def hash_api_key(token: str) -> str:
+    """The stored form of a key.
+
+    Plain SHA-256 rather than a password KDF, deliberately. A password is short,
+    low-entropy and guessable, so it needs to be expensive to test; this token
+    carries 256 bits from `secrets`, and no amount of iteration adds anything to
+    an input nobody can enumerate. What it does need is to be fast, because it
+    runs on every MCP request.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def check_api_key(store, token: str) -> str | None:
+    """The username a key belongs to, or None.
+
+    Records the use as a side effect: an unused key is the one you can revoke
+    without asking anybody, and there is no way to know which those are without
+    writing down when each was last seen.
+    """
+    if not token or not token.startswith(API_KEY_PREFIX):
+        return None
+    row = store.get_api_key(hash_api_key(token))
+    if row is None:
+        return None
+    with contextlib.suppress(Exception):
+        # Best-effort: a failed bookkeeping write must never fail the request
+        # it was only annotating.
+        store.touch_api_key(row["token_hash"], _now())
+    return str(row["username"])
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def validate_username(username: str) -> str:
