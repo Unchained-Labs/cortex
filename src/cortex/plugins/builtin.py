@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cortex import scope
@@ -175,6 +176,60 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             return f"Could not capture that: {exc}"
         brain.request_reindex()
         return f"Captured in vaults/{target}/{rel}:\n{line}"
+
+    def write_note(path: str, text: str, mode: str = "replace", vault: str = "") -> str:
+        """Create or update a whole document in a vault.
+
+        capture_note appends one line to today's journal, which is right for
+        "note that down" and useless for building documentation: an agent asked
+        to document an app has nowhere to put a structured page, and a model
+        given a goal it has no tool for does not report that — it reports
+        success. That is exactly what happened the first time a worker was
+        pointed at this: it announced a note at apps/jinsen.md that was never
+        written, because nothing could have written it.
+
+        `append` exists so a long document can be built across several runs
+        without re-sending what is already there, and so two runs extending the
+        same page do not silently drop each other's work.
+        """
+        from cortex.vaults import VaultError, read_file, write_file
+
+        target = vault or _writable_vault()
+        if not scope.allows_path(f"vaults/{target}/"):
+            return f"You cannot write to the {target} vault."
+        rel = path.strip().lstrip("/")
+        # Accept the index key form the read tools hand back, so a model can
+        # round-trip a path it was just given instead of having to strip it.
+        prefix = f"vaults/{target}/"
+        if rel.startswith(prefix):
+            rel = rel[len(prefix):]
+        if not rel:
+            return "Give a path inside the vault, e.g. apps/jinsen.md"
+        if ".." in Path(rel).parts:
+            return "Paths cannot climb out of the vault."
+        if mode not in {"replace", "append"}:
+            return "mode must be 'replace' or 'append'."
+
+        existing = ""
+        try:
+            existing = read_file(brain.config, target, rel)[0]
+        except (FileNotFoundError, VaultError):
+            existing = ""
+
+        if mode == "append" and existing:
+            body = existing.rstrip("\n") + "\n\n" + text.strip() + "\n"
+        else:
+            body = text.strip() + "\n"
+
+        try:
+            write_file(brain.config, target, rel, body, create=not existing)
+        except VaultError as exc:
+            return f"Could not write that: {exc}"
+        brain.request_reindex()
+        verb = "Appended to" if (mode == "append" and existing) else (
+            "Updated" if existing else "Created")
+        lines = body.count("\n")
+        return f"{verb} vaults/{target}/{rel} ({lines} lines)."
 
     def complete_task(path: str, line: int) -> str:
         """Tick one markdown checkbox, addressed exactly as the digest and
@@ -380,6 +435,36 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             },
             required=("text",),
             func=capture_note,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="write_note",
+            description=(
+                "Create or replace a whole document in a vault, e.g. apps/jinsen.md. "
+                "Use this for anything structured — documentation, a reference page, a "
+                "review — where capture_note's single journal line is the wrong shape. "
+                "mode='append' adds to the end of an existing page instead of replacing "
+                "it, which is how a document grows across several sessions."
+            ),
+            parameters={
+                "path": {
+                    "type": "string",
+                    "description": "Path inside the vault, e.g. apps/jinsen.md. Markdown only.",
+                },
+                "text": {"type": "string", "description": "The document body, in markdown."},
+                "mode": {
+                    "type": "string",
+                    "enum": ["replace", "append"],
+                    "description": "replace (default) writes the whole file; append adds to it.",
+                },
+                "vault": {
+                    "type": "string",
+                    "description": "Vault name; defaults to the caller's own.",
+                },
+            },
+            required=("path", "text"),
+            func=write_note,
         )
     )
     registry.register(
