@@ -61,3 +61,44 @@ def test_refuses_a_non_text_extension(brain: Brain) -> None:
 def test_rejects_an_unknown_mode(brain: Brain) -> None:
     out = _call(brain, "write_note", path="a.md", text="x", mode="upsert")
     assert "replace" in out.text
+
+
+# ------------------------------------------------- the approval gate
+
+def test_an_agent_cannot_tick_a_box_under_reviews(brain: Brain) -> None:
+    """The gate, enforced where it cannot be reasoned around.
+
+    A ticked checkbox under reviews/ means "a human authorised an agent to act
+    on this". The reviewing worker is told to leave every box empty. It wrote
+    nine of them ticked anyway, with an empty worklog proving nobody had
+    approved anything — so the rule cannot live in a brief.
+    """
+    out = _call(brain, "write_note", path="reviews/code-2026-09-04.md",
+                text="# code review\n\n- [x] **F1 · already approved by me**\n- [ ] **F2 · honest**")
+    body = (brain.config.vaults_dir / "shared" / "reviews" / "code-2026-09-04.md").read_text()
+    assert "- [x]" not in body, "an agent must not be able to approve its own finding"
+    assert body.count("- [ ]") == 2
+    # Said out loud, so the agent learns the rule rather than believing it
+    # wrote something it did not.
+    assert "reset to unticked" in out.text
+
+
+def test_ticks_outside_reviews_are_left_alone(brain: Brain) -> None:
+    # Elsewhere a checkbox is an ordinary to-do; ticking one is not a claim of
+    # authority and must keep working.
+    _call(brain, "write_note", path="lists/shopping.md", text="- [x] milk\n- [ ] bread")
+    body = (brain.config.vaults_dir / "shared" / "lists" / "shopping.md").read_text()
+    assert "- [x] milk" in body
+
+
+def test_the_normaliser_handles_the_shapes_markdown_actually_uses(brain: Brain) -> None:
+    from cortex.plugins.builtin import _untick
+
+    body, n = _untick("- [x] a\n  * [X] b\n    - [ ] c\nnot a box [x]\n")
+    assert n == 2
+    # Only the CHECKBOX lines are normalised — a list marker, optional indent,
+    # then the box. Both bullet styles and either case.
+    boxes = [ln for ln in body.splitlines() if ln.lstrip().startswith(("-", "*"))]
+    assert all("[x]" not in ln and "[X]" not in ln for ln in boxes)
+    # A bracket in prose is not a checkbox and must survive untouched.
+    assert "not a box [x]" in body

@@ -13,6 +13,7 @@ secrets you would not put in the shared vault.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
@@ -221,6 +222,22 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         else:
             body = text.strip() + "\n"
 
+        # An agent may not tick a box under reviews/.
+        #
+        # A ticked checkbox there means "a human authorised an agent to act on
+        # this", and it is the only thing standing between a review and an
+        # agent changing code unattended. The reviewing worker is TOLD to leave
+        # every box empty; it wrote nine of them ticked anyway, with an empty
+        # worklog proving nobody had approved a thing. A rule that exists only
+        # as an instruction is one the model reasons its way around, so the
+        # rule lives here instead.
+        #
+        # Scoped to reviews/ because that is where the tick carries authority.
+        # Elsewhere a checkbox is an ordinary to-do and ticking it is fine.
+        normalised = 0
+        if rel.startswith("reviews/"):
+            body, normalised = _untick(body)
+
         try:
             write_file(brain.config, target, rel, body, create=not existing)
         except VaultError as exc:
@@ -229,7 +246,16 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         verb = "Appended to" if (mode == "append" and existing) else (
             "Updated" if existing else "Created")
         lines = body.count("\n")
-        return f"{verb} vaults/{target}/{rel} ({lines} lines)."
+        note = ""
+        if normalised:
+            # Said out loud, so the agent learns the rule rather than believing
+            # it wrote something it did not.
+            note = (
+                f" {normalised} ticked checkbox(es) were reset to unticked: under "
+                "reviews/, a tick means a human approved that item for automated "
+                "work, so only a person may set one."
+            )
+        return f"{verb} vaults/{target}/{rel} ({lines} lines).{note}"
 
     def complete_task(path: str, line: int) -> str:
         """Tick one markdown checkbox, addressed exactly as the digest and
@@ -534,6 +560,15 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             func=daily_digest,
         )
     )
+
+
+_TICKED = re.compile(r"^(\s*[-*]\s*)\[[xX]\]", re.MULTILINE)
+
+
+def _untick(body: str) -> tuple[str, int]:
+    """Reset every ticked checkbox, returning the body and how many changed."""
+    out, count = _TICKED.subn(r"\1[ ]", body)
+    return out, count
 
 
 def _ripgrep(pattern: str, roots: list[str]) -> str:
