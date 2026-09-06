@@ -445,6 +445,63 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
                 out.append(f"          {r['body'][:220]}")
         return "\n".join(out)
 
+    def record_work(key: str, outcome: str, summary: str, branch: str = "",
+                    tests: str = "") -> str:
+        """Write one worklog entry. The thing that stops a finding being redone.
+
+        A tool rather than an instruction to append markdown, for the same
+        reason `approved_findings` is a tool: the agent reported "I've
+        documented this in the worklog" on a run where the worklog stayed a
+        single heading line. It was not lying so much as composing — an append
+        block with a key, a date and four labelled fields is a formatting task,
+        and a formatting task the model believes it completed is indistinguish-
+        able from one it did. Next run would have redone the same finding.
+
+        Here there is nothing to format. The entry either exists afterwards or
+        the call failed.
+        """
+        from datetime import date as _date
+
+        from cortex.vaults import VaultError, read_file, write_file
+
+        allowed = {"done", "already-fixed", "needs-a-human", "blocked"}
+        outcome = (outcome or "").strip().lower()
+        if outcome not in allowed:
+            return f"outcome must be one of {', '.join(sorted(allowed))}"
+        key = (key or "").strip()
+        if "#" not in key:
+            # The key is what dedupe matches on next run. A vague one silently
+            # fails to match and the work repeats forever.
+            return ("key must be the one approved_findings gave you, "
+                    "e.g. reviews/code-2026-09-06.md#F1")
+        if len((summary or "").strip()) < 10:
+            return "say what actually happened, in a sentence"
+
+        target = _writable_vault()
+        path = "reviews/_worklog.md"
+        try:
+            existing = read_file(brain.config, target, path)[0]
+            fresh = False
+        except (FileNotFoundError, VaultError):
+            existing = "# Worklog\n"
+            fresh = True
+
+        entry = (
+            f"\n- **{key}** — {_date.today().isoformat()}\n"
+            f"      **Outcome:** {outcome}\n"
+            f"      **Branch:** {branch.strip() or '—'}\n"
+            f"      **What changed:** {summary.strip()}\n"
+            f"      **Tests:** {tests.strip() or 'none run'}\n"
+        )
+        try:
+            write_file(brain.config, target, path,
+                       existing.rstrip("\n") + "\n" + entry, create=fresh)
+        except VaultError as exc:
+            return f"Could not write the worklog: {exc}"
+        brain.request_reindex()
+        return (f"Recorded {key} as {outcome}. approved_findings will not offer "
+                "it again.")
+
     def complete_task(path: str, line: int) -> str:
         """Tick one markdown checkbox, addressed exactly as the digest and
         search report it, so the model cannot tick the wrong thing."""
@@ -783,6 +840,29 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
                                  "description": "Filter."}},
             required=(),
             func=post_queue,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="record_work",
+            description=(
+                "Record what you did about an approved finding. Call this at the END of "
+                "every review-work run, whatever the outcome — including 'blocked' and "
+                "'needs-a-human'. It is what stops the next run redoing the same finding, "
+                "so a run that changed nothing still has to call it."
+            ),
+            parameters={
+                "key": {"type": "string",
+                        "description": "Exactly the key approved_findings gave you."},
+                "outcome": {"type": "string",
+                            "enum": ["done", "already-fixed", "needs-a-human", "blocked"],
+                            "description": "What happened."},
+                "summary": {"type": "string", "description": "What changed, in a sentence."},
+                "branch": {"type": "string", "description": "Branch name, if you made one."},
+                "tests": {"type": "string", "description": "What you ran and what it said."},
+            },
+            required=("key", "outcome", "summary"),
+            func=record_work,
         )
     )
     registry.register(

@@ -180,3 +180,54 @@ def test_approved_findings_keys_are_stable_and_addressable(brain: Brain) -> None
     _review(brain, "fragmentation-2026-09-06.md", "# f\n\n- [x] **F3 · a thing**\n")
     out = brain.registry.invoke("approved_findings", {}).text
     assert "reviews/fragmentation-2026-09-06.md#F3" in out
+
+
+# ------------------------------------------------- record_work
+
+def test_record_work_writes_an_entry_approved_findings_then_skips(brain: Brain) -> None:
+    """The pair that closes the loop.
+
+    The agent reported "I've documented this in the worklog" on a run where the
+    worklog stayed one heading line, so the next run would have redone the same
+    finding. Composing an append block is a formatting task, and one the model
+    believes it completed is indistinguishable from one it did.
+    """
+    d = brain.config.shared_vault / "reviews"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "code-2026-09-06.md").write_text(
+        "# code\n\n- [x] **F1 · a thing**\n- [x] **F2 · another**\n", encoding="utf-8")
+
+    assert "#F1" in brain.registry.invoke("approved_findings", {}).text
+
+    out = _call(brain, "record_work", key="reviews/code-2026-09-06.md#F1",
+                outcome="done", summary="Fixed the thing on a branch.",
+                branch="agent/code-F1", tests="42 passed")
+    assert out.ok, out.text
+    body = (d / "_worklog.md").read_text()
+    assert "code-2026-09-06.md#F1" in body and "done" in body
+
+    after = brain.registry.invoke("approved_findings", {}).text
+    assert "#F1" not in after, "a recorded finding must not be offered again"
+    assert "#F2" in after, "the others are still waiting"
+
+
+def test_record_work_insists_on_a_usable_key(brain: Brain) -> None:
+    # A vague key silently fails to match next run, and the work repeats forever.
+    out = _call(brain, "record_work", key="the minio one", outcome="done",
+                summary="Did the thing that was needed.")
+    assert "approved_findings gave you" in out.text
+
+
+@pytest.mark.parametrize("outcome", ["fixed", "", "DONE-ish"])
+def test_record_work_rejects_an_outcome_it_cannot_read(brain: Brain, outcome: str) -> None:
+    out = _call(brain, "record_work", key="reviews/x.md#F1", outcome=outcome,
+                summary="Something happened here.")
+    assert "outcome must be one of" in out.text
+
+
+def test_a_blocked_run_is_still_recorded(brain: Brain) -> None:
+    # A run that changed nothing still has to record, or it is retried forever.
+    out = _call(brain, "record_work", key="reviews/x.md#F9", outcome="blocked",
+                summary="Needs a credential rotation nobody but a human can do.")
+    assert out.ok
+    assert "blocked" in (brain.config.shared_vault / "reviews" / "_worklog.md").read_text()
