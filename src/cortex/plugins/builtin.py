@@ -477,6 +477,27 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         if len((summary or "").strip()) < 10:
             return "say what actually happened, in a sentence"
 
+        # "already-fixed" is the cheapest wrong answer available and the most
+        # expensive one to be wrong about: it removes a finding from the queue
+        # permanently without anybody doing the work.
+        #
+        # The first agent to reach this claimed a MinIO finding was already
+        # fixed because "neither compose file is present in the clankergram
+        # repo". Both were present, and visible to it. It had not looked.
+        #
+        # So that one outcome has to carry proof: a command and what it printed,
+        # or a file:line somebody else can open. Not a sentence asserting the
+        # check happened.
+        if outcome == "already-fixed":
+            proof = (tests or "").strip()
+            if len(proof) < 20:
+                return (
+                    "'already-fixed' needs evidence in `tests`: the command you ran and "
+                    "what it printed, or a file:line a person can open. Claiming a thing "
+                    "is gone without looking removes it from the queue for good. If you "
+                    "could not check, record 'blocked' instead."
+                )
+
         target = _writable_vault()
         path = "reviews/_worklog.md"
         try:

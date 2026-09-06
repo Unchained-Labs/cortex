@@ -231,3 +231,30 @@ def test_a_blocked_run_is_still_recorded(brain: Brain) -> None:
                 summary="Needs a credential rotation nobody but a human can do.")
     assert out.ok
     assert "blocked" in (brain.config.shared_vault / "reviews" / "_worklog.md").read_text()
+
+
+def test_already_fixed_demands_evidence(brain: Brain) -> None:
+    """The cheapest wrong answer, made expensive.
+
+    An agent closed a MinIO finding as already-fixed because "neither compose
+    file is present in the clankergram repo". Both were present and visible to
+    it; it had not looked. That outcome removes a finding from the queue for
+    good, so it is the one that has to carry proof.
+    """
+    out = _call(brain, "record_work", key="reviews/x.md#F1", outcome="already-fixed",
+                summary="The files are not there any more.")
+    assert not out.ok or "needs evidence" in out.text
+    assert not (brain.config.shared_vault / "reviews" / "_worklog.md").exists()
+
+    ok = _call(brain, "record_work", key="reviews/x.md#F1", outcome="already-fixed",
+               summary="Compose files were consolidated in an earlier commit.",
+               tests="ls ~/apps/clankergram/docker-compose*.yml -> no such file or directory")
+    assert ok.ok, ok.text
+
+
+def test_other_outcomes_do_not_need_evidence(brain: Brain) -> None:
+    # 'blocked' is the honest answer when you could not check, and making it
+    # expensive would push the agent back towards the cheap wrong one.
+    out = _call(brain, "record_work", key="reviews/x.md#F2", outcome="blocked",
+                summary="Needs a credential rotation only a human can do.")
+    assert out.ok, out.text
