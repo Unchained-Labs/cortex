@@ -25,8 +25,21 @@ services:
       #   docker run --rm -u 0 -v cortex_brain:/b alpine chown -R 1000:1000 /b
       #   docker compose up -d
       - ${CORTEX_BRAIN_DIR:-brain}:/brain
+      # Past agent sessions, READ-ONLY. They are 0600 on the host because they
+      # contain every prompt typed and every file read on this machine; the
+      # container runs as uid 1000, the same user that owns them, so it can read
+      # them and nothing here can change them.
+      #
+      # Set CLAUDE_CONFIG_DIR to an ABSOLUTE path. Compose does not expand "~"
+      # in a volume source — it creates a directory literally named "~" beside
+      # this file and mounts that, so the tools would find no sessions and say
+      # so rather than failing.
+      - ${CLAUDE_CONFIG_DIR:-/home/jarvis/.claude}:/transcripts/.claude:ro
     environment:
       CORTEX_BRAIN: /brain
+      # Where the transcript tools look. Absolute, because compose does not
+      # expand "~" in an environment value any more than in a volume source.
+      CLAUDE_CONFIG_DIR: /transcripts/.claude
       # Reach a model on the docker host with host.docker.internal
       # (works on Linux via the extra_hosts line below).
     extra_hosts:

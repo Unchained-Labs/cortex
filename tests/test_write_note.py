@@ -102,3 +102,81 @@ def test_the_normaliser_handles_the_shapes_markdown_actually_uses(brain: Brain) 
     assert all("[x]" not in ln and "[X]" not in ln for ln in boxes)
     # A bracket in prose is not a checkbox and must survive untouched.
     assert "not a box [x]" in body
+
+
+# ------------------------------------------------- grep_exact and dashes
+
+def test_grep_finds_a_pattern_that_starts_with_a_dash(brain: Brain) -> None:
+    """The bug that silently broke the approval loop.
+
+    Passed positionally, ripgrep parses a leading dash as a flag: searching for
+    "- [x]" — a ticked markdown checkbox — returned "rg: unrecognized flag -",
+    which the caller read as "no matches". An agent asked to find approved
+    findings therefore reported "nothing approved" while fifteen sat ticked on
+    disk, four times a day, for days.
+    """
+    (brain.config.shared_vault / "reviews").mkdir(parents=True, exist_ok=True)
+    (brain.config.shared_vault / "reviews" / "r.md").write_text(
+        "# r\n\n- [x] **F1 · approved**\n- [ ] **F2 · not**\n", encoding="utf-8")
+    brain.request_reindex()
+
+    out = brain.registry.invoke("grep_exact", {"pattern": "- [x]"}).text
+    assert "unrecognized flag" not in out
+    assert "F1" in out
+    # And it must not also return the unticked one — this is the whole signal.
+    assert "F2" not in out
+
+
+def test_grep_still_matches_ordinary_patterns(brain: Brain) -> None:
+    (brain.config.shared_vault / "plain.md").write_text("hello world\n", encoding="utf-8")
+    brain.request_reindex()
+    assert "hello" in brain.registry.invoke("grep_exact", {"pattern": "hello"}).text
+
+
+# ------------------------------------------------- approved_findings
+
+def _review(brain: Brain, name: str, body: str) -> None:
+    d = brain.config.shared_vault / "reviews"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(body, encoding="utf-8")
+
+
+def test_approved_findings_returns_only_ticked_ones(brain: Brain) -> None:
+    _review(brain, "code-2026-09-06.md",
+            "# code\n\n- [x] **F1 · ticked** — severity: high\n- [ ] **F2 · not ticked**\n")
+    out = brain.registry.invoke("approved_findings", {}).text
+    assert "F1" in out and "ticked" in out
+    assert "F2" not in out
+
+
+def test_approved_findings_skips_what_the_worklog_records(brain: Brain) -> None:
+    """The worklog is the record of what was DONE.
+
+    The tick is the human's approval and is never removed, so an item can be
+    both approved and finished. Without this the agent redoes the same finding
+    every run, forever.
+    """
+    _review(brain, "code-2026-09-06.md", "# code\n\n- [x] **F1 · already done**\n- [x] **F2 · fresh**\n")
+    _review(brain, "_worklog.md", "# Worklog\n\n- **reviews/code-2026-09-06.md#F1** — done\n")
+    out = brain.registry.invoke("approved_findings", {}).text
+    assert "F2" in out
+    assert "#F1" not in out
+
+
+def test_approved_findings_says_so_when_there_are_none(brain: Brain) -> None:
+    _review(brain, "code-2026-09-06.md", "# code\n\n- [ ] **F1 · unticked**\n")
+    out = brain.registry.invoke("approved_findings", {}).text
+    assert "No approved findings" in out
+
+
+def test_approved_findings_survives_no_reviews_directory(brain: Brain) -> None:
+    assert "nothing has been reviewed" in brain.registry.invoke(
+        "approved_findings", {}).text.lower()
+
+
+def test_approved_findings_keys_are_stable_and_addressable(brain: Brain) -> None:
+    # The key is what the worklog records and what dedupe matches on, so it has
+    # to identify one finding in one review unambiguously.
+    _review(brain, "fragmentation-2026-09-06.md", "# f\n\n- [x] **F3 · a thing**\n")
+    out = brain.registry.invoke("approved_findings", {}).text
+    assert "reviews/fragmentation-2026-09-06.md#F3" in out

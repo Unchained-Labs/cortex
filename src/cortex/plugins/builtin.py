@@ -257,6 +257,194 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
             )
         return f"{verb} vaults/{target}/{rel} ({lines} lines).{note}"
 
+    def approved_findings(limit: int = 20) -> str:
+        """Findings a human has approved for automated work, already parsed.
+
+        This exists because asking a model to FIND them did not work. The brief
+        said "grep_exact for '- [x]' under reviews/", which is two failure modes
+        stacked: ripgrep parsed the leading dash as a flag and returned an error
+        the caller read as "no matches", and once that was fixed the model still
+        short-circuited to the brief's "nothing approved, stop" branch rather
+        than constructing a bracket pattern correctly.
+
+        Both are the same lesson. A step that must happen every run should be a
+        tool call with no arguments to get wrong, not a sentence hoping the
+        model builds the right regex. Fifteen approved findings sat unworked
+        for days behind that.
+
+        Returns the file, line and title of each, so the caller can read the
+        review for context and record the work against a stable key.
+        """
+        import re as _re
+
+        reviews = brain.config.shared_vault / "reviews"
+        if not reviews.is_dir():
+            return "No reviews/ directory yet — nothing has been reviewed."
+
+        pattern = _re.compile(
+            r"^\s*[-*]\s*\[[xX]\]\s*\*\*(?P<id>[A-Za-z]+\d+)\s*[·.\-]\s*(?P<title>[^*]+?)\*\*(?P<rest>.*)$"
+        )
+        done = ""
+        worklog = reviews / "_worklog.md"
+        if worklog.is_file():
+            done = worklog.read_text(encoding="utf-8", errors="replace")
+
+        out: list[str] = []
+        for path in sorted(reviews.glob("*.md"), reverse=True):
+            if path.name.startswith("_"):
+                continue
+            key_base = f"reviews/{path.name}"
+            for n, line in enumerate(
+                path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1
+            ):
+                m = pattern.match(line)
+                if not m:
+                    continue
+                key = f"{key_base}#{m.group('id')}"
+                # Already worked. The worklog is the record of what was done, so
+                # an item in it is finished whatever its box still says — the
+                # tick is the human's approval and is never removed.
+                if key in done:
+                    continue
+                out.append(
+                    f"{key} (line {n}) — {m.group('title').strip()}"
+                    f"{' — ' + m.group('rest').strip(' —-·') if m.group('rest').strip(' —-·') else ''}"
+                )
+                if len(out) >= limit:
+                    break
+            if len(out) >= limit:
+                break
+
+        if not out:
+            return (
+                "No approved findings outstanding. Either nothing is ticked, or "
+                "everything ticked is already in reviews/_worklog.md."
+            )
+        return (
+            f"{len(out)} approved finding(s) waiting, highest-priority first:\n"
+            + "\n".join(out)
+        )
+
+    def transcript_sessions(project: str = "", limit: int = 20) -> str:
+        """Agent coding sessions on this machine, newest first."""
+        from cortex import transcripts
+
+        rows = transcripts.sessions(project=project, limit=max(1, min(limit, 200)))
+        if not rows:
+            return ("No transcripts found. Claude Code writes them under "
+                    "<config>/projects/; set CLAUDE_CONFIG_DIR if they live elsewhere.")
+        return "\n".join(
+            f"{s.when}  {s.project}  {s.session_id}  ({s.size // 1024} KB)" for s in rows
+        )
+
+    def transcript_search(query: str, project: str = "", limit: int = 20,
+                          role: str = "") -> str:
+        """Have we discussed this before, and where."""
+        from cortex import transcripts
+
+        hits = transcripts.search(query, project=project,
+                                  limit=max(1, min(limit, 100)), role=role)
+        if not hits:
+            # A clean "no" is the useful half of this tool: it is what lets the
+            # agent say "we have not covered this" instead of guessing.
+            return f"Nothing in any transcript matches {query!r}."
+        out = [f"{len(hits)} match(es) for {query!r}:"]
+        for h in hits:
+            out.append(f"- {h['when']} · {h['project']} · {h['role']} · session {h['session']}\n"
+                       f"    {h['text']}")
+        return "\n".join(out)
+
+    def transcript_read(session: str, limit: int = 60, offset: int = 0) -> str:
+        """The conversation of one session, by its id."""
+        from cortex import transcripts
+
+        data = transcripts.transcript(session, limit=max(1, min(limit, 400)), offset=offset)
+        if "error" in data:
+            return data["error"]
+        head = (f"{data['project']} · {data['session']} · {data['when']} · "
+                f"{data['total_turns']} turns")
+        body = "\n\n".join(
+            f"[{t['role']}] {t['text'][:1500]}" for t in data["turns"]
+        )
+        tail = ("\n\n… more turns; call again with a higher offset."
+                if data["truncated"] else "")
+        return f"{head}\n\n{body}{tail}"
+
+    def queue_post(channel: str, title: str, body: str, when: str = "",
+                   hook: str = "", source: str = "", vault: str = "") -> str:
+        """Put a draft post in the queue for a human to approve.
+
+        Writes a file. It does not publish, and there is no credential in this
+        brain — approval and publishing are separate steps on purpose.
+        """
+        from datetime import date as _date
+
+        from cortex import social
+        from cortex.vaults import VaultError, read_file, write_file
+
+        target = vault or _writable_vault()
+        if not scope.allows_path(f"vaults/{target}/"):
+            return f"You cannot write to the {target} vault."
+        when = (when or _date.today().isoformat()).strip()
+        problem = social.validate(when, channel, title, body)
+        if problem:
+            return f"Not queued: {problem}."
+
+        try:
+            existing = read_file(brain.config, target, social.QUEUE)[0]
+            fresh = False
+        except (FileNotFoundError, VaultError):
+            # A separate flag, not `existing.strip()`: the default header below
+            # is non-empty, so testing the text said "this file exists" for a
+            # file that does not and write_file refused to create it.
+            existing = "# Post queue\n\nTick a post to approve it for publishing.\n"
+            fresh = True
+
+        entry = social.render(when, channel.strip().lower(), title.strip(),
+                              hook.strip(), body.strip(), source.strip())
+        # Newest first: the queue is read top-down by a person deciding what
+        # goes out this week, and the oldest draft is the least likely answer.
+        head, _, rest = existing.partition("\n\n")
+        body_text = f"{head}\n\n{entry}\n\n{rest.lstrip()}".rstrip() + "\n"
+        try:
+            write_file(brain.config, target, social.QUEUE, body_text, create=fresh)
+        except VaultError as exc:
+            return f"Could not write the queue: {exc}"
+        brain.request_reindex()
+        return (f"Queued for {channel.strip().lower()} on {when}: {title.strip()!r}. "
+                f"It is unticked in vaults/{target}/{social.QUEUE} — nothing publishes "
+                "until a human approves it.")
+
+    def post_queue(only: str = "") -> str:
+        """What is queued, and what has been approved.
+
+        `only`: 'approved' | 'pending' | '' for everything.
+        """
+        from cortex import social
+        from cortex.vaults import VaultError, read_file
+
+        target = _writable_vault()
+        try:
+            text = read_file(brain.config, target, social.QUEUE)[0]
+        except (FileNotFoundError, VaultError):
+            return "The post queue is empty. Add one with queue_post."
+
+        rows = social.parse(text)
+        if only == "approved":
+            rows = [r for r in rows if r["approved"]]
+        elif only == "pending":
+            rows = [r for r in rows if not r["approved"]]
+        if not rows:
+            return f"No {only or ''} posts in the queue.".replace("  ", " ")
+
+        out = []
+        for r in rows:
+            mark = "APPROVED" if r["approved"] else "pending "
+            out.append(f"[{mark}] {r['date']} · {r['channel']} · {r['title']} (line {r['line']})")
+            if r["body"]:
+                out.append(f"          {r['body'][:220]}")
+        return "\n".join(out)
+
     def complete_task(path: str, line: int) -> str:
         """Tick one markdown checkbox, addressed exactly as the digest and
         search report it, so the model cannot tick the wrong thing."""
@@ -495,6 +683,110 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
     )
     registry.register(
         ToolPlugin(
+            name="approved_findings",
+            description=(
+                "Findings a human has ticked for automated work, already parsed and "
+                "with anything recorded in reviews/_worklog.md filtered out. Call this "
+                "FIRST when doing review work — it is the list, so there is no search "
+                "to get wrong. An empty result means nothing is approved, which is a "
+                "normal outcome."
+            ),
+            parameters={
+                "limit": {"type": "integer", "description": "Most to return (default 20)."},
+            },
+            required=(),
+            func=approved_findings,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="transcript_search",
+            description=(
+                "Search past agent coding sessions on this machine for a phrase. Use this "
+                "BEFORE answering anything that starts 'did we', 'have we', 'what did we "
+                "decide about', or when you are about to propose something that may have "
+                "been tried already — a clean 'nothing matches' is a real answer and is "
+                "the point of the tool."
+            ),
+            parameters={
+                "query": {"type": "string", "description": "Phrase to look for."},
+                "project": {"type": "string", "description": "Filter by project slug."},
+                "role": {"type": "string", "description": "'user' or 'assistant'."},
+                "limit": {"type": "integer", "description": "Max matches (default 20)."},
+            },
+            required=("query",),
+            func=transcript_search,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="transcript_sessions",
+            description="List agent coding sessions on this machine, newest first.",
+            parameters={
+                "project": {"type": "string", "description": "Filter by project slug."},
+                "limit": {"type": "integer", "description": "Max sessions (default 20)."},
+            },
+            required=(),
+            func=transcript_sessions,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="transcript_read",
+            description=(
+                "Read one past session's conversation by id, from transcript_search or "
+                "transcript_sessions. Paginated — transcripts run to thousands of turns."
+            ),
+            parameters={
+                "session": {"type": "string", "description": "Session id (a uuid)."},
+                "limit": {"type": "integer", "description": "Turns to return (default 60)."},
+                "offset": {"type": "integer", "description": "Turns to skip."},
+            },
+            required=("session",),
+            func=transcript_read,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="queue_post",
+            description=(
+                "Draft a social post into the queue for a human to approve. Use this when "
+                "asked to write a weekly post, an update, or anything for LinkedIn, X, "
+                "Clankergram, the blog or the newsletter. Build it from what the brain "
+                "actually knows — a review finding, a documented app, something in the "
+                "journal — and put that in `source` so the claim is traceable. It queues "
+                "a draft and publishes nothing."
+            ),
+            parameters={
+                "channel": {"type": "string", "enum": list(__import__(
+                    "cortex.social", fromlist=["CHANNELS"]).CHANNELS),
+                    "description": "Where it would go."},
+                "title": {"type": "string", "description": "Recognisable in a list."},
+                "body": {"type": "string", "description": "The post itself, as published."},
+                "when": {"type": "string", "description": "YYYY-MM-DD; today if omitted."},
+                "hook": {"type": "string", "description": "The opening line."},
+                "source": {"type": "string", "description": "Vault path or finding key it came from."},
+                "vault": {"type": "string", "description": "Vault name; the caller's own by default."},
+            },
+            required=("channel", "title", "body"),
+            func=queue_post,
+        )
+    )
+    registry.register(
+        ToolPlugin(
+            name="post_queue",
+            description=(
+                "What is in the post queue. `only`: 'approved' for what a human has "
+                "ticked, 'pending' for what is still waiting, blank for everything."
+            ),
+            parameters={"only": {"type": "string", "enum": ["", "approved", "pending"],
+                                 "description": "Filter."}},
+            required=(),
+            func=post_queue,
+        )
+    )
+    registry.register(
+        ToolPlugin(
             name="complete_task",
             description=(
                 "Tick an open markdown task, using the exact path and line number that "
@@ -574,8 +866,17 @@ def _untick(body: str) -> tuple[str, int]:
 def _ripgrep(pattern: str, roots: list[str]) -> str:
     try:
         proc = subprocess.run(
+            # `-e pattern` and a `--` before the roots, both load-bearing.
+            #
+            # Passed positionally, a pattern that STARTS WITH A DASH is parsed
+            # as a flag: searching for "- [x]" — a ticked markdown checkbox —
+            # came back "rg: unrecognized flag -", which the caller then read as
+            # "no matches". That is how an agent asked to find approved findings
+            # reported "nothing approved" while fifteen sat ticked on disk. -e
+            # says the next argument is the pattern; -- says the rest are paths,
+            # so a file named "-foo.md" cannot do the same thing.
             ["rg", "--fixed-strings", "-i", "--max-count", "3", "-n", "--max-filesize", "1M",
-             "-g", "!.git", "-g", "!.cortex", pattern, *roots],
+             "-g", "!.git", "-g", "!.cortex", "-e", pattern, "--", *roots],
             capture_output=True,
             text=True,
             timeout=30,
