@@ -258,3 +258,31 @@ def test_other_outcomes_do_not_need_evidence(brain: Brain) -> None:
     out = _call(brain, "record_work", key="reviews/x.md#F2", outcome="blocked",
                 summary="Needs a credential rotation only a human can do.")
     assert out.ok, out.text
+
+
+def test_done_requires_the_branch_it_claims(brain: Brain) -> None:
+    """Two consecutive runs recorded 'done' with branch "—".
+
+    No agent/ branch existed, the working tree was clean, and the thing the
+    finding was about was untouched — one reply even named a branch the worklog
+    did not have. The model narrated the work instead of doing it, and the queue
+    advanced anyway. 'done' means code changed; the brief requires that change
+    to be on a branch, so 'done' without one is self-contradictory.
+    """
+    out = _call(brain, "record_work", key="reviews/x.md#F1", outcome="done",
+                summary="Consolidated the service definition and removed the duplicate.")
+    assert "needs the branch" in out.text
+    assert not (brain.config.shared_vault / "reviews" / "_worklog.md").exists()
+
+    ok = _call(brain, "record_work", key="reviews/x.md#F1", outcome="done",
+               summary="Consolidated the service definition and removed the duplicate.",
+               branch="agent/fragmentation-F1", tests="pytest -q -> 42 passed")
+    assert ok.ok, ok.text
+
+
+def test_blocked_still_needs_no_branch(brain: Brain) -> None:
+    # The honest outcomes must stay cheap, or the agent is pushed back towards
+    # the fabricated one.
+    out = _call(brain, "record_work", key="reviews/x.md#F5", outcome="needs-a-human",
+                summary="Requires rotating a credential nobody but Erwin can rotate.")
+    assert out.ok, out.text

@@ -488,6 +488,24 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
         # So that one outcome has to carry proof: a command and what it printed,
         # or a file:line somebody else can open. Not a sentence asserting the
         # check happened.
+        # "done" means code changed, and the brief requires that change to be on
+        # a branch. Recording done WITHOUT one is self-contradictory: if no
+        # branch was made, no work was committed.
+        #
+        # This is not hypothetical. Two consecutive runs recorded 'done' with
+        # branch "—" and prose describing a fix. No agent/ branch existed, the
+        # working tree was clean, and the thing the finding was about was
+        # untouched. The reply even named a branch the worklog did not have —
+        # the model narrated the work rather than doing it, and the queue
+        # advanced anyway.
+        if outcome == "done" and not (branch or "").strip():
+            return (
+                "'done' needs the branch you made. The brief requires the change to live "
+                "on agent/<review>-<id>, so 'done' with no branch means nothing was "
+                "committed. If you could not make one, record 'blocked' or "
+                "'needs-a-human' — those are honest outcomes and they get retried."
+            )
+
         if outcome == "already-fixed":
             proof = (tests or "").strip()
             if len(proof) < 20:
