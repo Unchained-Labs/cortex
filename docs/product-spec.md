@@ -230,7 +230,9 @@ or from `.env` beside cortex.yaml, and responses carry only `token_present`.
 - `DELETE /api/repos/{name}` (admin) → `{ok, jobs_removed: [name]}` — the clone is deleted
   and every `code_review` job of that repo with it; review notes already written stay.
 - `GET /api/reviews?repo=` → `{reviews: [{path, name, mtime, repo, job, reviewed, date,
-  title, findings, approved}]}`, newest first. `path` is an index key
+  title, findings, approved, high, medium, low}]}`, newest first. The severity counts
+  come from the `— high ·` word on each finding line; a finding with none is counted in
+  `findings` only. `path` is an index key
   (`vaults/shared/reviews/<repo>-<date>.md`) for the Vault view; `approved` counts ticked
   findings, live from the file.
 - Files of a repo are read like any indexed file: `GET /api/file?path=code/<name>/<path>`
@@ -274,7 +276,11 @@ Styling: vendored `tokens.css` + `brand.css` from `src/cortex/server/web/`, cust
 through `--ul-*` variables only, dark default. Fonts self-hosted via @fontsource
 (space-grotesk, inter, jetbrains-mono) — no CDN at runtime.
 
-Views (tabs in the header, brand lockup at left):
+Views (tabs in the header, brand lockup at left). Everyday tabs are things people
+*do*; the three admin views — Extend, Automation, Admin — sit under one **Settings**
+tab with a side nav, because ten tabs across the top made the ones that matter daily
+harder to find. Anything that used to jump to one of them (Today's "set up a
+connector") lands on its section.
 1. **Chat** — agent conversation: thread list sidebar, SSE streaming, tool activity
    lines (⚙ running, ✓/✗ done), markdown-rendered answers with file-path citations
    clickable → opens Vault view at that file when it is a vault path.
@@ -299,15 +305,20 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
-7. **Code** (everyone; admin controls) — three panels in the Automation layout:
-   **Repositories** (name, provider badge, slug linking to the host, branch, `code/<name>/`
-   prefix, refresh interval, last sync in `--ul-up`/`--ul-down`, a note when the token
-   variable is unset; admins get Enabled, Sync now, Edit, Delete and an Add drawer that
-   syncs on save), **Scheduled reviews** (admins only: the `code_review` jobs as
-   sentences with Enabled, Review now, Edit, Delete, and a drawer with repo, interval,
-   mode, a free-text focus and an optional channel), and **Reviews** (every note under
-   `reviews/`, newest first, with `N findings, K approved` and Open → the Vault view).
-   Review jobs are hidden from the Automation tab's list, which says where they live.
+7. **Code** (everyone; admin controls) — three panels in the Automation layout. State
+   is a **pill, not a sentence**: a `.badge` reading `synced 2h ago` / `syncing` /
+   `needs a token` / `sync failed` / `paused`, and `ran 2h ago` / `reviewing` / `failed`
+   on a review. Each row has one primary action (Sync now, Review now) and a `⋯` menu
+   holding Edit, Pause/Resume and Remove, so the action that matters is not one of four
+   identical buttons. **Repositories**: name, slug linking to the host, branch, the
+   `code/<name>/` prefix, refresh interval and head commit; the failure text and the
+   token hint appear only after a failed sync. **Scheduled reviews** (admins): the
+   `code_review` jobs as sentences, with a drawer for repo, interval, mode, a free-text
+   focus and an optional channel. **Reviews**: every note under `reviews/`, newest
+   first, with severity pills (`high` in `--ul-down`, `medium` in `--ul-warn`, `low`
+   plain) and `approved` / `waiting`, and Open → the Vault view. With no repositories an
+   admin sees a three-step start (add → schedule → approve) instead of three empty panels.
+   Review jobs are hidden from Automation's list, which says where they live.
 
 ### Identity in the dashboard (v0.4)
 

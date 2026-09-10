@@ -10,9 +10,7 @@ import Channels from "./views/Channels";
 import Vault from "./views/Vault";
 import Code from "./views/Code";
 import Memory from "./views/Memory";
-import Extend from "./views/Extend";
-import Automation from "./views/Automation";
-import Admin from "./views/Admin";
+import Settings, { type SettingsSection } from "./views/Settings";
 import CaptureBox from "./components/CaptureBox";
 import HealthBanner from "./components/HealthBanner";
 import AccountDialog from "./components/AccountDialog";
@@ -25,9 +23,7 @@ export type Tab =
   | "channels"
   | "vault"
   | "code"
-  | "extend"
-  | "automation"
-  | "admin";
+  | "settings";
 
 export interface VaultTarget {
   /** the vault name, or "" for an index key outside `vaults/` */
@@ -48,9 +44,7 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "channels", label: "Channels" },
   { id: "vault", label: "Vault" },
   { id: "code", label: "Code" },
-  { id: "extend", label: "Extend", adminOnly: true },
-  { id: "automation", label: "Automation", adminOnly: true },
-  { id: "admin", label: "Admin", adminOnly: true },
+  { id: "settings", label: "Settings", adminOnly: true },
 ];
 
 /** Shortcuts must never fire while someone is writing. */
@@ -71,6 +65,7 @@ export default function App() {
   const [importNonce, setImportNonce] = useState(0);
   const [shortcuts, setShortcuts] = useState(false);
   const [account, setAccount] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("extend");
   const capturingRef = useRef(capturing);
   capturingRef.current = capturing;
 
@@ -98,6 +93,13 @@ export default function App() {
   const openSearch = useCallback(() => {
     setTab("search");
     setSearchFocus(Date.now());
+  }, []);
+
+  // Extend, Automation and Admin live under one Settings tab; anything that
+  // used to jump to one of them lands on its section.
+  const openSettings = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+    setTab("settings");
   }, []);
 
   // Global shortcuts: c = capture, / = search, ? = the hint. Never while
@@ -250,7 +252,7 @@ export default function App() {
             onVaultPath={openVaultPath}
             onCapture={() => setCapturing(true)}
             onImport={openImport}
-            onExtend={() => setTab("extend")}
+            onExtend={() => openSettings("extend")}
           />
         </div>
         <div
@@ -303,32 +305,17 @@ export default function App() {
         </div>
         {isAdmin && (
           <div
-          className={tab === "extend" ? "view" : "view hidden"}
-          role="tabpanel"
-          id="panel-extend"
-          aria-labelledby="tab-extend"
-        >
-            <Extend active={tab === "extend"} />
-          </div>
-        )}
-        {isAdmin && (
-          <div
-          className={tab === "automation" ? "view" : "view hidden"}
-          role="tabpanel"
-          id="panel-automation"
-          aria-labelledby="tab-automation"
-        >
-            <Automation active={tab === "automation"} />
-          </div>
-        )}
-        {isAdmin && (
-          <div
-          className={tab === "admin" ? "view" : "view hidden"}
-          role="tabpanel"
-          id="panel-admin"
-          aria-labelledby="tab-admin"
-        >
-            <Admin self={user.username} active={tab === "admin"} />
+            className={tab === "settings" ? "view" : "view hidden"}
+            role="tabpanel"
+            id="panel-settings"
+            aria-labelledby="tab-settings"
+          >
+            <Settings
+              active={tab === "settings"}
+              section={settingsSection}
+              onSection={setSettingsSection}
+              self={user.username}
+            />
           </div>
         )}
       </main>

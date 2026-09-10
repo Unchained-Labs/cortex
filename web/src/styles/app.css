@@ -932,11 +932,64 @@ select { cursor: pointer; }
   align-items: flex-start;
 }
 
+/* ---- settings: three admin views under one tab --------------------------- */
+
+.settings-side { width: 230px; }
+.settings-side .side-item { white-space: normal; padding-top: var(--ul-space-3); padding-bottom: var(--ul-space-3); }
+.side-item-sub { display: block; font-size: var(--ul-text-xs); color: var(--ul-muted); margin-top: 0.15em; }
+.side-item.active .side-item-sub { color: var(--ul-body); }
+.settings-pane > .view { flex: 1; min-height: 0; }
+@media (max-width: 720px) {
+  .settings-side { width: 150px; }
+}
+
+/* ---- row menus: the "⋯" that holds edit / pause / delete ------------------ */
+
+.menu { position: relative; display: inline-block; }
+.menu > summary { list-style: none; cursor: pointer; font-family: var(--ul-font-mono); padding-inline: 0.55em; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu[open] > summary { border-color: var(--ul-accent-dim); color: var(--ul-heading); }
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 12em;
+  display: flex;
+  flex-direction: column;
+  padding: var(--ul-space-1);
+  background: var(--ul-bg-raised);
+  border: 1px solid var(--ul-line-strong);
+  border-radius: var(--ul-radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.menu-item {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: var(--ul-radius-sm);
+  text-align: left;
+  padding: 0.45em 0.8em;
+  font-family: var(--ul-font-body);
+  font-size: var(--ul-text-sm);
+  color: var(--ul-body);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--ul-bg-inset); color: var(--ul-heading); outline: none; }
+.menu-item.danger:hover, .menu-item.danger:focus-visible { color: var(--ul-down); }
+
+/* a status pill that is still moving */
+.badge.busy::before { content: "\2022"; animation: badge-pulse 1.2s ease-in-out infinite; }
+@keyframes badge-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .badge.busy::before { animation: none; } }
+
 /* ---- code ---------------------------------------------------------------- */
 
 /* the Code tab is the Automation layout with repositories for rules */
 .repo-badge { margin: 0 var(--ul-space-2); vertical-align: middle; }
 .repo-link {
+  margin-left: var(--ul-space-2);
   color: var(--ul-body);
   text-decoration: none;
   border-bottom: 1px dashed var(--ul-line);
@@ -945,6 +998,10 @@ select { cursor: pointer; }
 .repo-link:hover { color: var(--ul-heading); border-bottom-color: var(--ul-accent); }
 .repo-subject { overflow-wrap: anywhere; }
 .review-row .auto-sentence { font-size: var(--ul-text-sm); }
+.code-start { margin-bottom: var(--ul-space-6); }
+.code-start .start-card .label { margin: 0; color: var(--ul-accent); flex: none; }
+.code-start .start-card h3 { flex: none; }
+.auto-row-actions .badge { align-self: center; }
 .link-btn {
   background: none;
   border: 0;

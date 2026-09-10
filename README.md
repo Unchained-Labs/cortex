@@ -68,9 +68,10 @@ calendar connector expands no recurrence rules yet.
   skipped.
 - **Code** — repositories the brain can read, and scheduled reviews of them
   (below).
-- **Automation** — rules and scheduled jobs (below).
-- **Admin** — accounts (`admin` / `member`), index and model health, and a
-  way to re-index without a terminal.
+- **Settings** (admins) — three sections: **Extend** (skills, connectors,
+  plugins, MCP servers, templates), **Automation** (rules and scheduled
+  jobs, below), and **Admin** (accounts, index and model health, a way to
+  re-index without a terminal).
 
 The agent can write, narrowly: it can add a line to today's note, tick a
 task by exact path and line, and save a web page as markdown. There is no

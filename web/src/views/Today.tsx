@@ -183,7 +183,7 @@ export default function Today({
                 </p>
                 {isAdmin && (
                   <button className="btn" onClick={onExtend}>
-                    Extend
+                    Set up a connector
                   </button>
                 )}
               </div>
