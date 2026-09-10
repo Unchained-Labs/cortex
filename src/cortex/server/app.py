@@ -39,6 +39,7 @@ from cortex import library as librarymod
 from cortex import rules as rulesmod
 from cortex.brain import Brain
 from cortex.events import AgentEvent
+from cortex.memory import graph
 from cortex.memory.search import hybrid_search
 
 _ASSET_TYPES = {".css": "text/css", ".svg": "image/svg+xml"}
@@ -213,6 +214,10 @@ def build_app(brain: Brain) -> FastAPI:
         await runtime.__aenter__()
         state["runtime"] = runtime
         worker = asyncio.create_task(_reindex_worker())
+        # A brain indexed before the graph existed has files and no graph;
+        # one pass at startup builds it, and a fresh brain has nothing to do.
+        if brain.store.stats()["files"] and not brain.store.graph_stats()["graph_nodes"]:
+            reindex_wanted.set()
         schedule = asyncio.create_task(_connector_worker())
         clock = asyncio.create_task(_job_worker())
         repos = asyncio.create_task(_repo_worker())
@@ -693,12 +698,45 @@ def build_app(brain: Brain) -> FastAPI:
                 {
                     "path": h.path,
                     "score": h.score,
+                    "via": h.via,
                     "passages": [
                         {"heading": p.heading, "text": p.text, "start_line": p.start_line}
                         for p in h.passages
                     ],
                 }
                 for h in result.hits
+            ],
+        }
+
+    @app.get("/api/graph/neighbors")
+    def graph_neighbors(path: str, user: dict = Depends(current_user)) -> dict:
+        """What a file is connected to, grouped by relation, within the
+        caller's scope. The Vault's Connections panel and nothing the model
+        does not also get from the ``related`` tool."""
+        key = path.strip().lstrip("/")
+        prefixes = user_scope(user)
+        allowed = lambda p: any(p.startswith(x) for x in prefixes)  # noqa: E731
+        if not key or not allowed(key):
+            raise HTTPException(status_code=404, detail="no such file")
+        known = brain.store.graph_node(f"file:{key}") is not None
+        groups = graph.grouped_neighbours(brain.store, key, allowed) if known else []
+        return {
+            "path": key,
+            "indexed": known,
+            "groups": [
+                {
+                    "relation": g["relation"],
+                    "items": [
+                        {
+                            "kind": i["node_kind"],
+                            "label": i["label"],
+                            "path": i["path"],
+                            "weight": i["weight"],
+                        }
+                        for i in g["items"]
+                    ],
+                }
+                for g in groups
             ],
         }
 

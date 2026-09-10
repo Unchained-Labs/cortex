@@ -1759,3 +1759,29 @@ select { cursor: pointer; }
   font-size: 12px;
 }
 .pane-model code { font-size: 11.5px; }
+
+/* -- Connections: the graph around the open file -------------------------- */
+.search-via {
+  margin: calc(-1 * var(--ul-space-1)) 0 var(--ul-space-1);
+  font-size: var(--ul-text-xs);
+}
+.connections {
+  margin-top: var(--ul-space-6);
+  padding-top: var(--ul-space-4);
+  border-top: 1px solid var(--ul-line);
+}
+.conn-groups { margin: var(--ul-space-2) 0 0; }
+.conn-group {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 1fr;
+  gap: var(--ul-space-2);
+  align-items: baseline;
+  padding: var(--ul-space-1) 0;
+}
+.conn-group dt { font-size: var(--ul-text-sm); }
+.conn-group dd { margin: 0; display: flex; flex-wrap: wrap; gap: var(--ul-space-1) var(--ul-space-3); }
+.conn-item { font-size: var(--ul-text-sm); max-width: 100%; text-align: left; }
+.conn-plain { color: var(--ul-muted); }
+@media (max-width: 640px) {
+  .conn-group { grid-template-columns: 1fr; gap: 0; }
+}

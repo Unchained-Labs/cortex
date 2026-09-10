@@ -124,6 +124,11 @@ export default function Search({
                     </button>
                     <span className="mono faint search-score">{hit.score.toFixed(3)}</span>
                   </div>
+                  {hit.via && (
+                    <p className="search-via muted" title="Pulled in by the brain's graph, not by the words">
+                      ↳ {hit.via}
+                    </p>
+                  )}
                   {hit.passages.map((p, i) => (
                     <button key={i} className="passage" onClick={() => onVaultPath(hit.path)}>
                       <span className="passage-head mono">

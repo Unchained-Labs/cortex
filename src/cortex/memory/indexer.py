@@ -42,6 +42,8 @@ class IndexReport:
     skipped: int = 0
     reset: bool = False
     embeddings: bool = False
+    graph_nodes: int = 0
+    graph_edges: int = 0
 
 
 def _is_text(path: Path) -> bool:
@@ -106,6 +108,17 @@ async def run_index(
             vectors = await _embed_ordered(embedder, [c.embedding_text() for c in chunks])
         store.replace_file(key, sig, stat.st_mtime, chunks, vectors)
         report.indexed += 1
+
+    # The graph follows the index: rebuilt when something changed, or when it
+    # has never been built (an index from before the graph existed).
+    if report.indexed or report.removed or not store.graph_stats()["graph_nodes"]:
+        from cortex.memory.graph import build
+
+        graph = await asyncio.to_thread(build, config, store)
+        report.graph_nodes, report.graph_edges = graph.nodes, graph.edges
+    else:
+        stats = store.graph_stats()
+        report.graph_nodes, report.graph_edges = stats["graph_nodes"], stats["graph_edges"]
 
     return report
 

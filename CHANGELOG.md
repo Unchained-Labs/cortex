@@ -26,6 +26,16 @@ The brain can read your code, review it on a schedule, and look things up.
 
 ### Added
 
+- **A graph over the brain.** Every index builds a structural graph beside
+  it: wikilinks, markdown links and tags between notes; imports, definitions
+  and symbol use between code files; files that changed in the same commit;
+  which directory holds what. Deterministic, no model at index time, every
+  edge a reason a person can check. Search pulls in one hop of neighbours
+  below its direct hits with a `via` that says why; the agent gets `related`
+  and `find_symbol`; the Vault shows a **Connections** panel under every
+  note and source. `GET /api/graph/neighbors?path=` serves it, scoped like
+  search. `/api/info` stats gain `graph_nodes` and `graph_edges`.
+
 - **A Code tab.** Add a GitHub or GitLab repository (`owner/name` or a
   URL, a branch if not the default) and cortex keeps a shallow clone under
   `.cortex/repos/`, refreshes it on an interval, and indexes it under

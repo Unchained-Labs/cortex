@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from cortex.memory import graph
 from cortex.memory.store import Store, unpack_vector
 
 RRF_K = 60
@@ -31,6 +32,8 @@ class Hit:
     path: str
     score: float
     passages: list[Passage] = field(default_factory=list)
+    #: How a graph neighbour got here ("links to garden.md"); empty for a direct hit.
+    via: str = ""
 
 
 @dataclass
@@ -105,7 +108,36 @@ def hybrid_search(
             )
 
     hits = sorted(by_file.values(), key=lambda h: h.score, reverse=True)[:k_files]
+    hits.extend(_neighbour_hits(store, hits, prefixes))
     return SearchResult(hits=hits, used_vectors=bool(vec_ids))
+
+
+def _allowed(prefixes: tuple[str, ...] | None):
+    """The scope test the store's own queries use: None is everything, an
+    empty tuple is nothing, otherwise a prefix must match."""
+    if prefixes is None:
+        return lambda _path: True
+    return lambda path: any(path.startswith(p) for p in prefixes)
+
+
+def _neighbour_hits(store: Store, hits: list[Hit], prefixes: tuple[str, ...] | None) -> list[Hit]:
+    """One hop out along the graph from the best hits: the note a hit links
+    to, the module it imports, the file that changes with it. They come in
+    below every direct hit and say what brought them."""
+    extra: list[Hit] = []
+    ranked = [(h.path, h.score) for h in hits]
+    floor = min((h.score for h in hits), default=0.0)
+    for path, score, via in graph.expand_hits(store, ranked, _allowed(prefixes)):
+        row = store.first_chunk(path)
+        if row is None:
+            continue
+        hit = Hit(path=path, score=min(score, floor), via=via)
+        hit.passages.append(
+            Passage(heading=row["heading"], text=row["body"], start_line=row["start_line"])
+        )
+        extra.append(hit)
+    extra.sort(key=lambda h: h.score, reverse=True)
+    return extra[:graph.EXPAND_TOP]
 
 
 def format_result(result: SearchResult, query: str) -> str:
@@ -115,7 +147,8 @@ def format_result(result: SearchResult, query: str) -> str:
     if not result.used_vectors:
         lines.append("(full-text only: no embeddings are configured or indexed)")
     for hit in result.hits:
-        lines.append(f"--- {hit.path} (score: {hit.score:.4f}) ---")
+        tag = f", via: {hit.via}" if hit.via else ""
+        lines.append(f"--- {hit.path} (score: {hit.score:.4f}{tag}) ---")
         for p in hit.passages:
             if p.heading:
                 lines.append(f"[{p.heading}] (line {p.start_line})")

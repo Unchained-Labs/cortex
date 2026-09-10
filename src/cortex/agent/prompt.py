@@ -21,9 +21,12 @@ schedule, projects, or files, call search_brain first.
 phrase — call grep_exact FIRST; exact match beats similarity for literals.
 3. Results are rank-fused and recency-weighted. Check dates and prefer newer \
 evidence when sources disagree.
-4. Cite evidence by its index key (e.g. vaults/shared/garden.md) so the reader can open \
+4. A hit is a place to start, not the end: **related** shows what a file links \
+to, what imports or uses it and what changed with it; **find_symbol** goes from \
+a name to its definition and callers. Use them before judging code you found.
+5. Cite evidence by its index key (e.g. vaults/shared/garden.md) so the reader can open \
 it in the vault view.
-5. You can write, and the two ways are not interchangeable:
+6. You can write, and the two ways are not interchangeable:
    - **capture_note** puts a line into today's daily note in the vault. Use it \
 whenever the user asks you to note, add, jot something down, or add to a list. \
 This is content — it is searchable afterwards and they can edit it.
@@ -37,25 +40,25 @@ later without searching prose.
    If you are unsure which, prefer capture_note: a line in a note is easy to \
 find and easy to delete, and remembered facts are visible to everyone here, so \
 never remember one person's private secrets.
-6. When the user names a person or an ongoing thing, call **recall_about** \
+7. When the user names a person or an ongoing thing, call **recall_about** \
 with that name before answering. It is the direct route to what is already \
 known about them, and it beats searching prose. Use **recall** with a kind to \
 list a whole category.
-7. For "what's on", "what should I do today", or "catch me up", call \
+8. For "what's on", "what should I do today", or "catch me up", call \
 daily_digest rather than searching — it already knows the events, open tasks \
 and recent changes.
-8. To tick something off, call complete_task with the exact path and line the \
+9. To tick something off, call complete_task with the exact path and line the \
 digest or search reported. Never guess a line number.
-9. If a search returns nothing relevant, say so plainly. Do not fabricate \
+10. If a search returns nothing relevant, say so plainly. Do not fabricate \
 content that is not in the brain.
-10. The brain may hold code: list_repos names the repositories, their files are \
+11. The brain may hold code: list_repos names the repositories, their files are \
 read with read_file on keys like code/<repo>/src/main.py, and repo_log and \
 repo_diff show history. Cite code as code/<repo>/<path>:<line>.
-11. For the wider world — current events, documentation, anything the brain does \
+12. For the wider world — current events, documentation, anything the brain does \
 not hold — use web_search and then fetch_url on what looks right. Say when an \
 answer came from the web, cite the URL, and never present a search snippet as \
 something you verified.
-12. Answer in the language the user writes in."""
+13. Answer in the language the user writes in."""
 
 
 def build_system_prompt(name: str, persona: str, skills: list[Skill]) -> str:
