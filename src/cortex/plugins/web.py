@@ -237,15 +237,16 @@ def format_hits(query: str, hits: list[Hit], which: str) -> str:
 def fetch(url: str, max_chars: int = MAX_PAGE_CHARS) -> tuple[str, str]:
     """(title, text) of a page: readable text for HTML, the body for text
     and JSON, and a refusal for anything else."""
+    from cortex import urlguard
     from cortex.clip import MAX_BYTES, extract
 
     url = (url or "").strip()
-    if urlparse(url).scheme not in ("http", "https"):
-        raise WebError("only http and https URLs can be fetched")
     try:
-        res = httpx.get(
-            url, timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": USER_AGENT}
-        )
+        # One hop at a time, each checked: a page may not redirect the agent
+        # into this machine (see urlguard).
+        res = urlguard.get(url, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
+    except urlguard.BlockedURL as exc:
+        raise WebError(str(exc)) from exc
     except httpx.HTTPError as exc:
         raise WebError(f"could not fetch {url}: {exc}") from exc
     if res.status_code != 200:

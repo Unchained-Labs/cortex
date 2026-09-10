@@ -147,6 +147,19 @@ def test_sync_clones_then_fast_forwards_and_indexes(brain: Brain, origin: Path):
     assert brain.config.resolve_key("code/demo/../secret") is None
 
 
+def test_tree_stays_inside_the_clone(brain: Brain, origin: Path):
+    repo = local_repo(origin)
+    code.sync(brain.config, repo)
+    target = repo.clone_dir(brain.config)
+    # a sibling whose name merely starts with the clone's name is outside it
+    sibling = target.parent / (target.name + "-other")
+    sibling.mkdir()
+    (sibling / "secret.txt").write_text("x", encoding="utf-8")
+    assert "No such directory" in code.tree(target, "../demo-other")
+    assert "No such directory" in code.tree(target, "..")
+    assert "app.py" in code.tree(target, "")
+
+
 def test_sync_explains_a_missing_repo(brain: Brain, tmp_path: Path):
     repo = code.Repo(name="gone", provider="github", slug="x/gone", host="github.com")
     repo.clone_url = lambda: f"file://{tmp_path / 'nowhere'}"  # type: ignore[method-assign]

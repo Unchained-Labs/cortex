@@ -304,7 +304,13 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
                 # Already worked. The worklog is the record of what was done, so
                 # an item in it is finished whatever its box still says — the
                 # tick is the human's approval and is never removed.
-                if key in done:
+                #
+                # Matched as the bold key record_work writes, not as a
+                # substring: "…#F1" is a prefix of "…#F10", and a plain `in`
+                # test made the tenth finding vanish the moment the first was
+                # done. The first scheduled review caught it (F1 of
+                # reviews/cortex-2026-09-10.md).
+                if f"**{key}**" in done:
                     continue
                 rest = m.group("rest").strip(" —-·")
                 out.append(

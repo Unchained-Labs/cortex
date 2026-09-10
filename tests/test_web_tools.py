@@ -5,8 +5,25 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from cortex import urlguard
 from cortex.brain import Brain
 from cortex.plugins import web
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch):
+    """fetch_url resolves hosts before fetching; the tests have no network."""
+    import ipaddress
+
+    def resolve(host, *a, **k):
+        try:
+            ipaddress.ip_address(host)
+            addr = host  # a literal address resolves to itself
+        except ValueError:
+            addr = "93.184.216.34"
+        return [(None, None, None, None, (addr, 0))]
+
+    monkeypatch.setattr(urlguard.socket, "getaddrinfo", resolve)
 
 DDG_HTML = """
 <div class="result">
@@ -108,6 +125,8 @@ def test_fetch_extracts_html_and_passes_text_through(monkeypatch):
 def test_fetch_refusals(monkeypatch):
     with pytest.raises(web.WebError, match="http"):
         web.fetch("file:///etc/passwd")
+    with pytest.raises(web.WebError, match="this machine"):
+        web.fetch("http://127.0.0.1:8642/api/info")
     monkeypatch.setattr(web.httpx, "get", lambda *a, **k: FakeResponse(status=404))
     with pytest.raises(web.WebError, match="404"):
         web.fetch("https://example.com/missing")

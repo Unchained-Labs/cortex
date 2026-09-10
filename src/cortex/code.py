@@ -397,7 +397,9 @@ def diff(
 def tree(target: Path, subdir: str = "", depth: int = 2, limit: int = MAX_TREE_LINES) -> str:
     """An indented listing, directories first, skipping the usual noise."""
     root = (target / subdir).resolve() if subdir else target.resolve()
-    if not str(root).startswith(str(target.resolve())) or not root.is_dir():
+    # is_relative_to, not a string prefix: "…/repos/cortex-other" starts with
+    # "…/repos/cortex" and would have passed as inside it.
+    if not root.is_relative_to(target.resolve()) or not root.is_dir():
         return f"No such directory: {subdir or '/'}"
     lines: list[str] = []
 
