@@ -74,7 +74,8 @@ def test_an_agent_cannot_tick_a_box_under_reviews(brain: Brain) -> None:
     approved anything — so the rule cannot live in a brief.
     """
     out = _call(brain, "write_note", path="reviews/code-2026-09-04.md",
-                text="# code review\n\n- [x] **F1 · already approved by me**\n- [ ] **F2 · honest**")
+                text="# code review\n\n- [x] **F1 · already approved by me**\n"
+                     "- [ ] **F2 · honest**")
     body = (brain.config.vaults_dir / "shared" / "reviews" / "code-2026-09-04.md").read_text()
     assert "- [x]" not in body, "an agent must not be able to approve its own finding"
     assert body.count("- [ ]") == 2
@@ -156,7 +157,8 @@ def test_approved_findings_skips_what_the_worklog_records(brain: Brain) -> None:
     both approved and finished. Without this the agent redoes the same finding
     every run, forever.
     """
-    _review(brain, "code-2026-09-06.md", "# code\n\n- [x] **F1 · already done**\n- [x] **F2 · fresh**\n")
+    _review(brain, "code-2026-09-06.md",
+            "# code\n\n- [x] **F1 · already done**\n- [x] **F2 · fresh**\n")
     _review(brain, "_worklog.md", "# Worklog\n\n- **reviews/code-2026-09-06.md#F1** — done\n")
     out = brain.registry.invoke("approved_findings", {}).text
     assert "F2" in out

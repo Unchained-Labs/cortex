@@ -66,6 +66,8 @@ calendar connector expands no recurrence rules yet.
 - **Import** — bring an existing Obsidian vault as a zip upload, a git URL,
   or a server path. `.obsidian/`, `.git/` and non-vault file types are
   skipped.
+- **Code** — repositories the brain can read, and scheduled reviews of them
+  (below).
 - **Automation** — rules and scheduled jobs (below).
 - **Admin** — accounts (`admin` / `member`), index and model health, and a
   way to re-index without a terminal.
@@ -130,16 +132,79 @@ writing, the shape is constrained on purpose:
 - **every change is logged**, so "where did my note go" always has an answer
 
 **Jobs** are the clock: sync a connector, re-index, run the rules, write
-today's digest into a note, or post it into a channel. Intervals are hours
+today's digest into a note, post it into a channel, or review a repository. Intervals are hours
 in plain words rather than cron, and each job says what it is: *"apply the
 tidying rules daily"*. Both ship a set of ready-made suggestions, all
 switched off until you read one and turn it on.
 
 Two things deliberately absent. There is no "ask the model something and
-notify me" job — every job is declared and deterministic, producing a fact
-rather than an opinion. And a channel digest with nothing in it posts
-nothing: a scheduled "nothing to report" is what teaches people to ignore
-the channel it arrives in.
+notify me" job — every job is declared, and the one that runs the model,
+the code review, has a declared input (this repo, these commits) and an
+output a person approves line by line. And a channel digest with nothing in
+it posts nothing, just as a review with no new commits writes nothing: a
+scheduled "nothing to report" is what teaches people to ignore the channel
+it arrives in.
+
+## Code: repos the brain can read, and reviews it writes
+
+Add a GitHub or GitLab repository in the **Code** tab — `owner/name` or its
+URL, a branch if not the default — and cortex keeps a shallow clone under
+`.cortex/repos/`, refreshes it on an interval, and indexes it under
+`code/<name>/`. From then on the agent searches your notes and your code
+together: `search_brain` finds both, `read_file` opens
+`code/cortex/src/cortex/jobs.py`, and `list_repos`, `repo_tree`, `repo_log`
+and `repo_diff` give it what git knows. Every repo you add is readable by
+everyone on the brain; adding it is the decision to share it.
+
+A private repository needs a token. A repo names the environment variable
+that holds it (`GITHUB_TOKEN` or `GITLAB_TOKEN` by default), and the
+variable comes from the shell or from a **`.env` beside `cortex.yaml`**,
+which cortex loads on start — the same file serves `api_key_env` for a
+model provider:
+
+```sh
+# ~/brain/.env
+GITHUB_TOKEN=github_pat_…
+GITLAB_TOKEN=glpat-…
+OPENROUTER_API_KEY=sk-or-…
+```
+
+The token reaches git as a per-host header, never in `argv` and never in
+the clone's `.git/config`. `cortex repos add owner/name` does the same from
+a terminal.
+
+**Scheduled reviews** are jobs of a new kind. Pick a repo, an interval, what
+to look for ("error handling and anything that touches auth"), and
+optionally a channel. On each run the agent syncs the repo, takes the diff
+since the commit it last reviewed, pulls context from the brain — the
+project's conventions, earlier reviews, the worklog — and writes
+`reviews/<repo>-<date>.md` in the shared vault, with one line per finding:
+
+```markdown
+- [ ] **F1 · unchecked return** — high · `src/pay.py:41` — the result is dropped…
+```
+
+That is the approval loop cortex already had: a person ticks the findings
+an agent may act on, `approved_findings` lists them, `record_work` closes
+them. The reviewer cannot tick its own boxes — the note is written by code
+from the model's answer, and ticks are stripped on the way in. A run with
+no new commits writes nothing; the first run of a repo looks at the whole
+codebase once. Reviews of a repo also work in Chat ("review the last three
+commits of cortex"); the `code-review` skill in the library spells out the
+procedure.
+
+## Research: the agent on the web
+
+Two tools, `web_search` and `fetch_url`, and three library skills that use
+them: `web-lookup` for a fact with a source, `deep-research` for a question
+that deserves several searches, cross-checked and written up under
+`research/`, and `code-review` above. Search needs a backend, and the
+self-hosted one comes first: set `CORTEX_SEARCH_URL` to a
+[SearXNG](https://github.com/searxng/searxng) instance (with `format: json`
+enabled), or `BRAVE_SEARCH_API_KEY` for the Brave Search API. With neither
+set it falls back to DuckDuckGo's HTML endpoint, which needs no key and can
+break without notice — when it does, the tool says so rather than answering
+"nothing found".
 
 ## Four ways to extend it
 
@@ -186,7 +251,8 @@ Cursor, or Hermes the same tool registry, at box-owner scope.
 ├── vaults/<user>/     # each user's private vault
 ├── sources/           # connector output
 ├── skills/ plugins/ connectors/
-└── .cortex/           # index, checkpoints, usage.jsonl — disposable cache
+├── .env               # tokens: GITHUB_TOKEN, an api_key_env… (gitignored)
+└── .cortex/           # index, checkpoints, repo clones — disposable cache
 ```
 
 Back it up by copying the folder. Home brain, company brain, club brain:
@@ -196,6 +262,7 @@ three folders, three `cortex serve` processes.
 cortex note "the boiler service is due in March"   # capture, from anywhere
 cortex today                                       # what is on
 cortex clip https://example.com/recipe             # save a page as markdown
+cortex repos add Unchained-Labs/cortex             # let the brain read a repo
 cortex demo                                        # example notes for an empty brain
 cortex service install                             # keep it running across reboots
 ```
@@ -216,7 +283,7 @@ calibration. Telemetry never makes a call fail.
 
 ```sh
 uv venv --python 3.12 && uv pip install -e '.[dev]'
-.venv/bin/pytest                    # 102 tests
+.venv/bin/pytest                    # 329 tests
 .venv/bin/ruff check src tests
 cd web && npm install && npm run dev   # SPA dev server, proxies to :8642
 ```

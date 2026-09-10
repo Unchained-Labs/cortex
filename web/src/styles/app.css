@@ -48,7 +48,8 @@ body { overflow: hidden; }
   font-size: var(--ul-text-sm);
   font-weight: 600;
   color: var(--ul-muted);
-  padding: var(--ul-space-2) var(--ul-space-3);
+  /* ten tabs have to fit a laptop before the strip starts scrolling */
+  padding: var(--ul-space-2) 0.65em;
   min-height: 60px;
 }
 .tab:hover { color: var(--ul-heading); }
@@ -930,6 +931,33 @@ select { cursor: pointer; }
   border-left-width: 3px;
   align-items: flex-start;
 }
+
+/* ---- code ---------------------------------------------------------------- */
+
+/* the Code tab is the Automation layout with repositories for rules */
+.repo-badge { margin: 0 var(--ul-space-2); vertical-align: middle; }
+.repo-link {
+  color: var(--ul-body);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--ul-line);
+  overflow-wrap: anywhere;
+}
+.repo-link:hover { color: var(--ul-heading); border-bottom-color: var(--ul-accent); }
+.repo-subject { overflow-wrap: anywhere; }
+.review-row .auto-sentence { font-size: var(--ul-text-sm); }
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--ul-heading);
+  cursor: pointer;
+  text-align: left;
+  border-bottom: 1px dashed var(--ul-line);
+}
+.link-btn:hover { border-bottom-color: var(--ul-accent); }
+.code-view .drawer-fields textarea { min-height: 4.5em; font-family: inherit; }
 
 /* ---- automation ---------------------------------------------------------- */
 

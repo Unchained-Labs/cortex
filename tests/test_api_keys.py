@@ -8,7 +8,7 @@ that is not a valid key resolves to nobody.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -27,7 +27,7 @@ def store(tmp_path):
 def _add(store, token: str, name: str = "leclanker", user: str = "erwin") -> None:
     store.add_api_key(
         auth.hash_api_key(token), name, user,
-        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        datetime.now(UTC).isoformat(timespec="seconds"),
     )
 
 

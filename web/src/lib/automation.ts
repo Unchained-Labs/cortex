@@ -80,6 +80,10 @@ function jobPhrase(job: { kind: string; settings: Record<string, unknown> }): st
   if (job.kind === "channel_digest") {
     return `post today's digest into #${text("channel", "general")}`;
   }
+  if (job.kind === "code_review") {
+    const what = settings.mode === "full" ? "the whole of" : "new commits in";
+    return `review ${what} ${text("repo", "?")}`;
+  }
   return job.kind;
 }
 
@@ -151,4 +155,8 @@ export const JOB_KIND_LABELS: Record<string, string> = {
   rules: "run the tidying rules",
   digest: "write today's digest into a vault",
   channel_digest: "post today's digest into a channel",
+  code_review: "review a repository",
 };
+
+/** Kinds that live in the Code tab rather than in Automation. */
+export const CODE_JOB_KINDS = new Set(["code_review"]);

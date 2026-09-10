@@ -8,6 +8,7 @@ import Chat from "./views/Chat";
 import Search from "./views/Search";
 import Channels from "./views/Channels";
 import Vault from "./views/Vault";
+import Code from "./views/Code";
 import Memory from "./views/Memory";
 import Extend from "./views/Extend";
 import Automation from "./views/Automation";
@@ -23,6 +24,7 @@ export type Tab =
   | "memory"
   | "channels"
   | "vault"
+  | "code"
   | "extend"
   | "automation"
   | "admin";
@@ -45,6 +47,7 @@ const TABS: { id: Tab; label: string; adminOnly?: boolean }[] = [
   { id: "memory", label: "Memory" },
   { id: "channels", label: "Channels" },
   { id: "vault", label: "Vault" },
+  { id: "code", label: "Code" },
   { id: "extend", label: "Extend", adminOnly: true },
   { id: "automation", label: "Automation", adminOnly: true },
   { id: "admin", label: "Admin", adminOnly: true },
@@ -289,6 +292,14 @@ export default function App() {
           aria-labelledby="tab-vault"
         >
           <Vault target={vaultTarget} importNonce={importNonce} isAdmin={isAdmin} />
+        </div>
+        <div
+          className={tab === "code" ? "view" : "view hidden"}
+          role="tabpanel"
+          id="panel-code"
+          aria-labelledby="tab-code"
+        >
+          <Code active={tab === "code"} isAdmin={isAdmin} onVaultPath={openVaultPath} />
         </div>
         {isAdmin && (
           <div

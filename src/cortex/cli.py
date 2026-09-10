@@ -7,6 +7,7 @@ import asyncio
 import getpass
 import os
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import httpx
@@ -652,6 +653,83 @@ def cmd_ext(args: argparse.Namespace) -> None:
     brain.close()
 
 
+def cmd_repos(args: argparse.Namespace) -> None:
+    """The Code tab from the terminal: list, add, sync, remove.
+
+    Tokens are not taken here — a repo names the environment variable that
+    holds its token, and the variable comes from the shell or from .env
+    beside cortex.yaml, so nothing secret ever lands in shell history."""
+    import json
+
+    from cortex import code
+
+    brain = _brain(args)
+    try:
+        if args.action == "list":
+            repos = brain.repos()
+            if not repos:
+                print("no repositories — add one: cortex repos add owner/name [--provider gitlab]")
+            for repo in repos:
+                mark = " " if repo.enabled else "-"
+                head = f"{repo.head[:10]} {repo.head_subject}" if repo.head else "never synced"
+                token = "token set" if code.token_present(repo) else f"no {repo.token_env}"
+                print(f"{mark} {repo.name}  {repo.web_url()}  [{repo.branch or 'default'}]"
+                      f"  {head}  ({token})")
+                if repo.last_status and repo.last_status != "ok":
+                    print(f"      last sync: {repo.last_detail}")
+        elif args.action == "add":
+            if not args.name:
+                sys.exit("usage: cortex repos add <owner/name or URL> [--provider gitlab]")
+            repo = code.parse_repo({
+                "slug": args.name, "provider": args.provider, "branch": args.branch,
+                "token_env": args.token_env, "sync_hours": args.sync_hours,
+            })
+            brain.store.upsert_repo(repo.name, json.dumps(repo.spec()), True)
+            brain.refresh_code_roots()
+            print(f"added {repo.name} ({repo.web_url()}); syncing…")
+            result = code.sync(brain.config, repo)
+            brain.store.record_repo_sync(
+                repo.name, "ok", f"cloned {result.head[:10]}", result.head, result.subject
+            )
+            print(f"{repo.name} at {result.head[:10]} {result.subject}")
+            print("run `cortex index` so the code is searchable")
+        elif args.action == "sync":
+            repos = [
+                r for r in brain.repos() if r.enabled and (not args.name or r.name == args.name)
+            ]
+            if not repos:
+                sys.exit("no such repository" if args.name else "no repositories to sync")
+            failed = False
+            for repo in repos:
+                try:
+                    result = code.sync(brain.config, repo)
+                except code.RepoError as exc:
+                    brain.store.record_repo_sync(repo.name, "error", str(exc))
+                    print(f"✗ {repo.name}: {exc}")
+                    failed = True
+                    continue
+                verb = "cloned" if result.fresh else ("updated to" if result.changed else "at")
+                brain.store.record_repo_sync(
+                    repo.name, "ok", f"{verb} {result.head[:10]}", result.head, result.subject
+                )
+                print(f"✓ {repo.name}: {verb} {result.head[:10]} {result.subject}")
+            print("run `cortex index` to pick up the changes")
+            if failed:
+                sys.exit(1)
+        elif args.action == "remove":
+            if not args.name:
+                sys.exit("usage: cortex repos remove <name>")
+            if not brain.store.delete_repo(args.name):
+                sys.exit(f"no repository named {args.name!r}")
+            code.remove_clone(brain.config, args.name)
+            brain.refresh_code_roots()
+            print(f"removed {args.name}; reviews it produced stay in the vault")
+    except code.RepoError as exc:
+        sys.exit(f"error: {exc}")
+    finally:
+        brain.close()
+
+
 def _read_password(args: argparse.Namespace, prompt: str) -> str:
     """A password, from stdin when asked or from the terminal otherwise.
 
@@ -679,7 +757,7 @@ def cmd_keys(args: argparse.Namespace) -> None:
     unattributable write into a shared vault is the thing nobody can undo,
     because nobody can tell whose it was.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     brain = _brain(args)
     if args.action == "add":
@@ -690,7 +768,7 @@ def cmd_keys(args: argparse.Namespace) -> None:
         token = auth.mint_api_key()
         brain.store.add_api_key(
             auth.hash_api_key(token), args.name, args.user,
-            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            datetime.now(UTC).isoformat(timespec="seconds"),
         )
         # Printed once and never recoverable: only the hash is stored.
         print(token)
@@ -887,6 +965,17 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("name", nargs="?", default="")
     p.add_argument("--brain")
     p.set_defaults(func=cmd_ext)
+
+    p = sub.add_parser("repos", help="repositories the brain can read (the Code tab)")
+    p.add_argument("action", choices=["list", "add", "sync", "remove"])
+    p.add_argument("name", nargs="?", default="", help="owner/name or URL to add; a name otherwise")
+    p.add_argument("--provider", choices=["github", "gitlab"], default="")
+    p.add_argument("--branch", default="", help="branch to follow; the default branch if omitted")
+    p.add_argument("--token-env", default="",
+                   help="environment variable holding the token (GITHUB_TOKEN / GITLAB_TOKEN)")
+    p.add_argument("--sync-hours", type=float, default=6, help="refresh interval; 0 = manual")
+    p.add_argument("--brain")
+    p.set_defaults(func=cmd_repos)
 
     p = sub.add_parser("keys", help="manage Bearer keys for the MCP endpoint")
     p.add_argument("action", choices=["add", "list", "revoke"])

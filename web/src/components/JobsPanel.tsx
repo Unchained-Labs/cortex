@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
-import { describeJob, everyLabel, isoAgo, jobSentence } from "../lib/automation";
+import { CODE_JOB_KINDS, describeJob, everyLabel, isoAgo, jobSentence } from "../lib/automation";
 import type { Job, JobList, JobRun, JobSpec, VaultMeta } from "../types";
 import JobForm, { type JobTarget } from "./JobForm";
 
-const EMPTY: JobList = { jobs: [], suggested: [], kinds: [], connectors: [] };
+const EMPTY: JobList = {
+  jobs: [],
+  suggested: [],
+  kinds: [],
+  connectors: [],
+  repos: [],
+  review_modes: [],
+  default_focus: "",
+};
 
 /** How the last run went, in the two colours that mean it. */
 function LastRun({ job }: { job: Job }) {
@@ -143,6 +151,11 @@ export default function JobsPanel({ active }: { active: boolean }) {
 
   const known = new Set(list.jobs.map((j) => j.name));
   const offers = list.suggested.filter((s) => !known.has(s.name));
+  // Code reviews are jobs too, but they are made and edited in the Code tab,
+  // where the repository they review lives.
+  const jobs = list.jobs.filter((j) => !CODE_JOB_KINDS.has(j.kind));
+  const reviews = list.jobs.length - jobs.length;
+  const kinds = list.kinds.filter((k) => !CODE_JOB_KINDS.has(k));
 
   return (
     <section className="card auto-panel">
@@ -169,13 +182,13 @@ export default function JobsPanel({ active }: { active: boolean }) {
         </div>
       )}
 
-      {list.jobs.length === 0 ? (
+      {jobs.length === 0 ? (
         <p className="muted auto-none">
           Nothing scheduled. Add one of the ready-made jobs below, or make your own.
         </p>
       ) : (
         <div className="auto-rows">
-          {list.jobs.map((job) => (
+          {jobs.map((job) => (
             <JobRow
               key={job.name}
               job={job}
@@ -188,6 +201,13 @@ export default function JobsPanel({ active }: { active: boolean }) {
             />
           ))}
         </div>
+      )}
+
+      {reviews > 0 && (
+        <p className="muted auto-blurb">
+          {reviews === 1 ? "One scheduled code review is" : `${reviews} scheduled code reviews are`}{" "}
+          managed in the Code tab.
+        </p>
       )}
 
       {offers.length > 0 && (
@@ -216,7 +236,7 @@ export default function JobsPanel({ active }: { active: boolean }) {
         <JobForm
           key={target.nonce}
           target={target}
-          kinds={list.kinds}
+          kinds={kinds}
           connectors={list.connectors}
           vaults={vaults}
           onClose={() => setTarget(null)}

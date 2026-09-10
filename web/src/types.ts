@@ -374,6 +374,70 @@ export interface JobList {
   suggested: JobSpec[];
   kinds: string[];
   connectors: string[];
+  /** repository names a `code_review` job may name */
+  repos: string[];
+  review_modes: string[];
+  default_focus: string;
+}
+
+/**
+ * `GET /api/repos` — one repository the brain reads. `token_present` says
+ * whether the variable named by `token_env` is set; its value never leaves
+ * the server. `prefix` is how its files are keyed (`code/<name>`).
+ */
+export interface Repo {
+  name: string;
+  provider: string;
+  slug: string;
+  host: string;
+  branch: string;
+  token_env: string;
+  sync_hours: number;
+  enabled: boolean;
+  url: string;
+  token_present: boolean;
+  last_sync: string;
+  last_status: string;
+  last_detail: string;
+  head: string;
+  head_subject: string;
+  cloned: boolean;
+  prefix: string;
+}
+
+export interface RepoList {
+  repos: Repo[];
+  providers: string[];
+  /** default token variable per provider */
+  token_envs: Record<string, string>;
+  /** where the server reads tokens from, to say so in the form */
+  env_path: string;
+}
+
+/** `POST /api/repos/{name}/sync` */
+export interface RepoSync {
+  name: string;
+  status: string;
+  detail: string;
+  head?: string;
+  changed?: boolean;
+}
+
+/**
+ * `GET /api/reviews` — one review note in the shared vault. `path` is the
+ * index key the Vault view opens; `approved` counts ticked findings.
+ */
+export interface Review {
+  path: string;
+  name: string;
+  mtime: number;
+  repo: string;
+  job: string;
+  reviewed: string;
+  date: string;
+  title: string;
+  findings: number;
+  approved: number;
 }
 
 export interface JobRun {
@@ -386,4 +450,5 @@ export type WsEvent =
   | { type: "channel_message"; channel_id: string; message: ChannelMessage }
   | { type: "agent_partial"; channel_id: string; message_id: string; text: string }
   | { type: "vault_changed"; vault: string; path: string }
-  | { type: "index_done"; stats: Record<string, number> };
+  | { type: "index_done"; stats: Record<string, number> }
+  | { type: "repo_synced"; repo: string; status: string; head?: string };
