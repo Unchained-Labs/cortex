@@ -6,6 +6,22 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+Three findings from the first scheduled review of this repository, run
+by the Code tab against its own pull request:
+
+- `approved_findings` matched worklog keys as substrings, so `#F1` being
+  done hid `#F10` forever. It now matches the bold key `record_work`
+  writes.
+- `fetch_url` and `clip_url` followed redirects anywhere, so a public page
+  could 302 the agent into `127.0.0.1:8642` or the cloud metadata address.
+  Redirects are now followed one hop at a time and loopback, link-local and
+  unspecified addresses are refused; the private LAN stays allowed, because
+  "read the wiki on the NAS" is a feature.
+- `repo_tree` guarded its path with a string prefix, which let
+  `repos/cortex-other` pass as inside `repos/cortex`.
+
 The brain can read your code, review it on a schedule, and look things up.
 
 ### Added

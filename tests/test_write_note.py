@@ -288,3 +288,13 @@ def test_blocked_still_needs_no_branch(brain: Brain) -> None:
     out = _call(brain, "record_work", key="reviews/x.md#F5", outcome="needs-a-human",
                 summary="Requires rotating a credential nobody but Erwin can rotate.")
     assert out.ok, out.text
+
+
+def test_a_done_finding_does_not_hide_the_tenth(brain: Brain) -> None:
+    """`#F1` is a prefix of `#F10`; a substring test on the worklog made the
+    tenth finding disappear the moment the first was done."""
+    body = "# code\n\n" + "\n".join(f"- [x] **F{i} · finding {i}**" for i in range(1, 12)) + "\n"
+    _review(brain, "code-2026-09-11.md", body)
+    _review(brain, "_worklog.md", "# Worklog\n\n- **reviews/code-2026-09-11.md#F1** — done\n")
+    out = brain.registry.invoke("approved_findings", {}).text
+    assert "#F1 " not in out and "#F10" in out and "#F11" in out

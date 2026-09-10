@@ -117,15 +117,16 @@ def extract(html: str, url: str) -> Clip:
 
 
 def fetch(url: str) -> Clip:
-    if urlparse(url).scheme not in ("http", "https"):
-        raise VaultError("only http and https URLs can be clipped")
+    from cortex import urlguard
+
     try:
-        res = httpx.get(
+        res = urlguard.get(
             url,
             timeout=TIMEOUT,
-            follow_redirects=True,
             headers={"User-Agent": "cortex-clip/1.0 (+https://github.com/Unchained-Labs/cortex)"},
         )
+    except urlguard.BlockedURL as exc:
+        raise VaultError(str(exc)) from exc
     except httpx.HTTPError as exc:
         raise VaultError(f"could not fetch {url}: {exc}") from exc
     if res.status_code != 200:
