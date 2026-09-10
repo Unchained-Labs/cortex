@@ -16,6 +16,8 @@ const STAT_LABELS: Record<string, string> = {
   chunks: "Chunks",
   vectors: "Vectors",
   facts: "Facts",
+  graph_nodes: "Graph nodes",
+  graph_edges: "Graph edges",
 };
 
 function ResetPassword({ username, onDone }: { username: string; onDone: () => void }) {

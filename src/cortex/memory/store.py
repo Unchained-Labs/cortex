@@ -153,6 +153,18 @@ CREATE TABLE IF NOT EXISTS repos(
     last_detail TEXT NOT NULL DEFAULT '', head TEXT NOT NULL DEFAULT '',
     head_subject TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS graph_nodes(
+    -- The brain's graph (memory/graph.py): ids carry their kind, so a
+    -- neighbour list explains itself: file:, dir:, tag:, sym:, pkg:, commit:.
+    id TEXT PRIMARY KEY, kind TEXT NOT NULL, label TEXT NOT NULL,
+    path TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS graph_nodes_kind ON graph_nodes(kind, label);
+CREATE TABLE IF NOT EXISTS graph_edges(
+    src TEXT NOT NULL, dst TEXT NOT NULL, kind TEXT NOT NULL,
+    weight REAL NOT NULL DEFAULT 1.0, PRIMARY KEY (src, dst, kind)
+);
+CREATE INDEX IF NOT EXISTS graph_edges_dst ON graph_edges(dst);
 CREATE TABLE IF NOT EXISTS ext_disabled(
     kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (kind, name)
 );
@@ -309,7 +321,8 @@ class Store:
         facts = self.db.execute(
             "SELECT COUNT(*) AS n FROM facts WHERE retired=0"
         ).fetchone()["n"]
-        return {"files": files, "chunks": chunks, "vectors": vectors, "facts": facts}
+        return {"files": files, "chunks": chunks, "vectors": vectors, "facts": facts,
+                **self.graph_stats()}
 
     # -- search primitives ------------------------------------------------
     # `prefixes` is the caller's scope: None = unrestricted, () = nothing.
@@ -737,6 +750,54 @@ class Store:
                 "UPDATE jobs SET last_run=?, last_status=?, last_detail=? WHERE name=?",
                 (_now(), status, detail[:500], name),
             )
+
+    # -- graph ---------------------------------------------------------------
+    def replace_graph(
+        self, nodes: list[tuple[str, str, str, str]], edges: list[tuple[str, str, str, float]]
+    ) -> None:
+        """Swap the whole graph in one transaction, so a reader never sees a
+        half-built one."""
+        with self.db:
+            self.db.execute("DELETE FROM graph_edges")
+            self.db.execute("DELETE FROM graph_nodes")
+            self.db.executemany(
+                "INSERT INTO graph_nodes(id, kind, label, path) VALUES(?,?,?,?)", nodes
+            )
+            self.db.executemany(
+                "INSERT INTO graph_edges(src, dst, kind, weight) VALUES(?,?,?,?)", edges
+            )
+
+    def graph_node(self, node_id: str) -> sqlite3.Row | None:
+        return self.db.execute(
+            "SELECT id, kind, label, path FROM graph_nodes WHERE id=?", (node_id,)
+        ).fetchone()
+
+    def graph_edges_of(self, node_id: str, limit: int = 200) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT src, dst, kind, weight FROM graph_edges WHERE src=? OR dst=? "
+            "ORDER BY weight DESC LIMIT ?",
+            (node_id, node_id, limit),
+        ).fetchall()
+
+    def graph_find(self, kind: str, label: str, limit: int = 20) -> list[sqlite3.Row]:
+        """Nodes of a kind whose label matches, exact first then contains."""
+        return self.db.execute(
+            "SELECT id, kind, label, path FROM graph_nodes WHERE kind=? AND label LIKE ? "
+            "ORDER BY CASE WHEN label=? THEN 0 ELSE 1 END, length(label), label LIMIT ?",
+            (kind, f"%{label}%", label, limit),
+        ).fetchall()
+
+    def first_chunk(self, path: str) -> sqlite3.Row | None:
+        return self.db.execute(
+            "SELECT id, path, heading, body, start_line, mtime FROM chunks WHERE path=? "
+            "ORDER BY idx LIMIT 1",
+            (path,),
+        ).fetchone()
+
+    def graph_stats(self) -> dict[str, int]:
+        nodes = self.db.execute("SELECT COUNT(*) AS n FROM graph_nodes").fetchone()["n"]
+        edges = self.db.execute("SELECT COUNT(*) AS n FROM graph_edges").fetchone()["n"]
+        return {"graph_nodes": nodes, "graph_edges": edges}
 
     # -- repositories -----------------------------------------------------
     def list_repos(self) -> list[sqlite3.Row]:

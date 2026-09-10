@@ -10,6 +10,8 @@ import Editor from "../components/Editor";
 import Markdown from "../components/Markdown";
 import ImportDrawer from "../components/ImportDrawer";
 import TemplateDrawer from "../components/TemplateDrawer";
+import Connections from "../components/Connections";
+import { splitVaultKey } from "../lib/paths";
 
 type Mode = "edit" | "preview";
 
@@ -360,6 +362,21 @@ export default function Vault({
     void openFile(v, path);
   };
 
+  /** Open anything the graph points at: a note in any vault, or a source
+   *  or code file read-only. */
+  const openKey = (key: string) => {
+    const split = splitVaultKey(key);
+    if (split && split.vault === vault) {
+      navigateTo(split.path);
+    } else if (split) {
+      if (!confirmDiscard(`Open ${key} anyway and lose them?`)) return;
+      void selectVault(split.vault, split.path);
+    } else {
+      if (!confirmDiscard(`Open ${key} anyway and lose them?`)) return;
+      void openSource(key);
+    }
+  };
+
   const onWikilink = (targetName: string) => {
     const v = vaultRef.current;
     if (!v) return;
@@ -627,6 +644,10 @@ export default function Vault({
                     interactiveTasks={!readOnly}
                     onWikilink={readOnly ? undefined : onWikilink}
                     onTaskToggle={readOnly ? undefined : onTaskToggle}
+                  />
+                  <Connections
+                    fileKey={source ? source.path : vault ? `vaults/${vault}/${openPath}` : null}
+                    onOpen={openKey}
                   />
                 </div>
               )

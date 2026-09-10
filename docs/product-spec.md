@@ -49,8 +49,18 @@ All responses JSON unless stated. Errors: `{"detail": str}` with 4xx/5xx.
   default. 422 on empty text, 404 for a vault the caller may not write.
 
 ### Search
-- `GET /api/search?q=` → `{used_vectors, hits: [{path, score, passages: [{heading, text,
-  start_line}]}]}` — scoped to the caller (shared + own vault + sources).
+- `GET /api/search?q=` → `{used_vectors, hits: [{path, score, via, passages: [{heading,
+  text, start_line}]}]}` — scoped to the caller (shared + own vault + sources + code).
+  After the direct hits come up to five graph neighbours of the best ones (a note a
+  hit links to, a module that imports it, a file that changed with it), scored below
+  every direct hit, with `via` saying why (`"links to garden.md"`); a direct hit has
+  `via: ""`.
+- `GET /api/graph/neighbors?path=` → `{path, indexed, groups: [{relation, items:
+  [{kind, label, path, weight}]}]}` — what one file is connected to, grouped by
+  relation in reading order (`links to`, `linked from`, `tagged`, `imported by`, `used
+  by`, `changed together with`, …). Items outside the caller's scope are dropped;
+  404 for a path the caller may not read; `indexed: false` with no groups for a path
+  the graph has not seen.
 
 ### Vaults
 - `GET /api/vaults` → `{vaults: [{name, kind: "shared"|"personal", files}]}` (only ones
@@ -390,7 +400,12 @@ asked:
 - **Search** is a tab of its own over `GET /api/search`: a query box, hits grouped by
   file with their matching passages, headings shown, and a note when results are
   full-text only. Clicking a hit opens it in the Vault view at that file. Reachable
-  with **/** from anywhere.
+  with **/** from anywhere. A hit the graph pulled in shows its reason under the path
+  (`↳ links to garden.md`).
+- **Connections** sits under the preview of every note and read-only source in the
+  Vault: `GET /api/graph/neighbors` grouped by relation, every file a link that opens
+  it (in its own vault, or read-only for sources and code). Absent, not empty, when
+  a file has no connections.
 6. **Sign-in** — username/password against /api/auth/login.
 
 Build: `npm run build` outputs to `../src/cortex/server/webdist/` (vite `outDir`,
@@ -406,6 +421,14 @@ LM Studio, **OpenRouter**, **LiteLLM proxy**), `ChatAnthropic` for direct Anthro
 through `langchain-mcp-adapters`. Local tools remain `ToolPlugin`s, adapted to
 LangChain `StructuredTool`s. Usage lands in `.cortex/usage.jsonl` via a callback
 (prompt_tokens/completion_tokens when reported; absent stays absent).
+
+The graph (`memory/graph.py`): a structural graph over everything indexed, rebuilt
+whole whenever the index changes and stored beside it (`graph_nodes`, `graph_edges`).
+Nodes are files, directories, tags, symbols, packages and commits; edges are `links`,
+`tagged`, `imports`, `depends`, `defines`, `uses`, `mentions`, `touched`, `cochange`,
+`contains`. Extraction is deterministic (regexes over notes and code, `git log` for
+history) so indexing never waits on a model. Search expands one hop from its best
+hits; the agent walks it with `related` and `find_symbol`.
 
 Per-request scope: a ContextVar carries the caller's readable path prefixes
 (`vaults/shared`, `vaults/<user>`, `sources`, extra paths); retrieval tools filter

@@ -111,7 +111,23 @@ export interface SearchPassage {
 export interface SearchHit {
   path: string;
   score: number;
+  /** Why a graph neighbour is here ("links to garden.md"); empty for a direct hit. */
+  via: string;
   passages: SearchPassage[];
+}
+
+/** `GET /api/graph/neighbors?path=` — what a file is connected to, grouped. */
+export interface GraphNeighbor {
+  kind: "file" | "sym" | "tag" | "pkg" | "commit" | "dir";
+  label: string;
+  path: string;
+  weight: number;
+}
+
+export interface GraphNeighbors {
+  path: string;
+  indexed: boolean;
+  groups: { relation: string; items: GraphNeighbor[] }[];
 }
 
 export interface SearchResult {

@@ -51,7 +51,9 @@ calendar connector expands no recurrence rules yet.
   agent can do it for you. Filing is optional; search does not care which
   note a line is in.
 - **Search** — hybrid full-text and vector search over everything you can
-  read, with **/** from anywhere.
+  read, with **/** from anywhere. Below the direct hits come the notes and
+  files the brain's graph connects to them, each saying why (`↳ links to
+  garden.md`).
 - **Chat** — private threads with the agent. It searches before it answers,
   streams its tool calls (⚙ `search_brain` … ✓ 33ms), and cites files by
   path; clicking a citation opens it in the vault view.
@@ -120,6 +122,30 @@ with reciprocal rank fusion, nudged by recency — the design from
 The index rebuilds from scratch when the chunk schema *or* embedding model
 changes, because silently mixing vector spaces is corruption. No embedding
 endpoint means full-text search that says so, not fake vector scores.
+
+### The graph
+
+Search finds the passage that matches the words. It does not know that the
+note it found links to three others, that the function it found is called
+from two files that never say its name, or that the file it found changed
+in the same commit as another six times this month. Those relations are how
+a person moves from a hit to the thing they wanted, so the brain keeps
+them as a graph beside the index:
+
+- **notes** — `[[wikilinks]]`, markdown links, `#tags`
+- **code** — imports resolved inside the repository, definitions, and which
+  files *use* a symbol another file defines
+- **history** — files that changed in the same commit, from `git log`
+- **shape** — which directory holds what
+
+It is the structural half of the GraphRAG / LightRAG / HippoRAG design,
+extracted deterministically: no model call between saving a note and
+searching it, milliseconds per file, and every edge is a reason a person
+can check. It shows up in three places: search pulls in one hop of
+neighbours below the direct hits with a `via` that says why; the agent has
+`related` (what a file links to, imports, uses, changed with) and
+`find_symbol` (where a name is defined and used); and the Vault shows a
+**Connections** panel under every note and source file.
 
 ## Things it does without being asked
 
