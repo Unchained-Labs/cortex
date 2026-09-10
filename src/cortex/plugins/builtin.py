@@ -306,9 +306,10 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
                 # tick is the human's approval and is never removed.
                 if key in done:
                     continue
+                rest = m.group("rest").strip(" —-·")
                 out.append(
                     f"{key} (line {n}) — {m.group('title').strip()}"
-                    f"{' — ' + m.group('rest').strip(' —-·') if m.group('rest').strip(' —-·') else ''}"
+                    f"{' — ' + rest if rest else ''}"
                 )
                 if len(out) >= limit:
                     break
@@ -861,8 +862,10 @@ def register_builtin(registry: ToolRegistry, brain: Brain) -> None:
                 "body": {"type": "string", "description": "The post itself, as published."},
                 "when": {"type": "string", "description": "YYYY-MM-DD; today if omitted."},
                 "hook": {"type": "string", "description": "The opening line."},
-                "source": {"type": "string", "description": "Vault path or finding key it came from."},
-                "vault": {"type": "string", "description": "Vault name; the caller's own by default."},
+                "source": {"type": "string",
+                           "description": "Vault path or finding key it came from."},
+                "vault": {"type": "string",
+                          "description": "Vault name; the caller's own by default."},
             },
             required=("channel", "title", "body"),
             func=queue_post,

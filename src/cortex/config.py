@@ -69,6 +69,10 @@ class BrainConfig:
     mcp_servers: list[McpServerConfig] = field(default_factory=list)
     connectors: dict[str, dict] = field(default_factory=dict)
     extra_paths: list[Path] = field(default_factory=list)
+    # (index-key prefix, clone directory) for every repository the brain can
+    # read, e.g. ("code/cortex", .cortex/repos/cortex). Filled by the Brain
+    # from the store, since repos are managed in the dashboard, not the file.
+    code_roots: list[tuple[str, Path]] = field(default_factory=list)
 
     # -- layout -----------------------------------------------------------
     @property
@@ -104,6 +108,16 @@ class BrainConfig:
         return self.root / ".cortex"
 
     @property
+    def repos_dir(self) -> Path:
+        """Clones of the repositories in the Code tab. A cache: every one
+        can be re-cloned, so it lives with the index rather than the notes."""
+        return self.state_dir / "repos"
+
+    @property
+    def env_path(self) -> Path:
+        return self.root / ".env"
+
+    @property
     def db_path(self) -> Path:
         return self.state_dir / "index.db"
 
@@ -119,6 +133,7 @@ class BrainConfig:
     def indexed_roots(self) -> list[Path]:
         roots = self.vault_roots() + [self.sources_dir]
         roots += [p for p in self.extra_paths]
+        roots += [p for _, p in self.code_roots]
         return [r for r in roots if r.is_dir()]
 
     def root_pairs(self) -> list[tuple[str, Path]]:
@@ -128,6 +143,7 @@ class BrainConfig:
         if self.sources_dir.is_dir():
             pairs.append(("sources", self.sources_dir))
         pairs += [(p.name, p) for p in self.extra_paths if p.is_dir()]
+        pairs += [(prefix, p) for prefix, p in self.code_roots if p.is_dir()]
         return pairs
 
     def resolve_key(self, key: str) -> Path | None:
@@ -186,6 +202,12 @@ def load_config(root: Path) -> BrainConfig:
     path = root / CONFIG_NAME
     if not path.is_file():
         raise ConfigError(f"{path} does not exist; run `cortex init {root}` first")
+    # Secrets live beside the config, never in it: api_key_env and a repo's
+    # token_env name variables, and this is where those variables come from
+    # when the shell did not already set them.
+    from cortex.env import load_env_file
+
+    load_env_file(root / ".env")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"{path} must contain a YAML mapping")

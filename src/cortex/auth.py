@@ -14,7 +14,7 @@ import hmac
 import re
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SESSION_COOKIE = "cortex_session"
@@ -73,7 +73,7 @@ def check_api_key(store, token: str) -> str | None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def validate_username(username: str) -> str:

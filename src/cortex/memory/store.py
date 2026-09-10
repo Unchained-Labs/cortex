@@ -144,6 +144,15 @@ CREATE TABLE IF NOT EXISTS jobs(
     last_run TEXT NOT NULL DEFAULT '', last_status TEXT NOT NULL DEFAULT '',
     last_detail TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS repos(
+    -- Repositories in the Code tab. The spec is the dashboard's JSON; the
+    -- rest is what the last sync said. Tokens are never in here: a repo
+    -- names the environment variable that holds its token, nothing more.
+    name TEXT PRIMARY KEY, spec TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+    last_sync TEXT NOT NULL DEFAULT '', last_status TEXT NOT NULL DEFAULT '',
+    last_detail TEXT NOT NULL DEFAULT '', head TEXT NOT NULL DEFAULT '',
+    head_subject TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ext_disabled(
     kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (kind, name)
 );
@@ -728,6 +737,50 @@ class Store:
                 "UPDATE jobs SET last_run=?, last_status=?, last_detail=? WHERE name=?",
                 (_now(), status, detail[:500], name),
             )
+
+    # -- repositories -----------------------------------------------------
+    def list_repos(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT name, spec, enabled, last_sync, last_status, last_detail, head, "
+            "head_subject FROM repos ORDER BY name"
+        ).fetchall()
+
+    def get_repo(self, name: str) -> sqlite3.Row | None:
+        return self.db.execute(
+            "SELECT name, spec, enabled, last_sync, last_status, last_detail, head, "
+            "head_subject FROM repos WHERE name=?",
+            (name,),
+        ).fetchone()
+
+    def upsert_repo(self, name: str, spec: str, enabled: bool) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO repos(name, spec, enabled, updated_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(name) DO UPDATE SET spec=excluded.spec, "
+                "enabled=excluded.enabled, updated_at=excluded.updated_at",
+                (name, spec, int(enabled), _now()),
+            )
+
+    def delete_repo(self, name: str) -> bool:
+        with self.db:
+            cur = self.db.execute("DELETE FROM repos WHERE name=?", (name,))
+        return cur.rowcount > 0
+
+    def record_repo_sync(
+        self, name: str, status: str, detail: str, head: str = "", head_subject: str = ""
+    ) -> None:
+        with self.db:
+            if head:
+                self.db.execute(
+                    "UPDATE repos SET last_sync=?, last_status=?, last_detail=?, head=?, "
+                    "head_subject=? WHERE name=?",
+                    (_now(), status, detail[:500], head, head_subject[:200], name),
+                )
+            else:
+                self.db.execute(
+                    "UPDATE repos SET last_sync=?, last_status=?, last_detail=? WHERE name=?",
+                    (_now(), status, detail[:500], name),
+                )
 
     # -- extensions -------------------------------------------------------
     def is_disabled(self, kind: str, name: str) -> bool:

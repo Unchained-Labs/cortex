@@ -12,7 +12,7 @@ import json
 import re
 import sys
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from importlib import resources
 from pathlib import Path
 
@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from cortex import auth, capture, extensions, scope, vaults
+from cortex import code as codemod
 from cortex import demo as demomod
 from cortex import digest as digestmod
 from cortex import jobs as jobsmod
@@ -43,7 +44,9 @@ from cortex.memory.search import hybrid_search
 _ASSET_TYPES = {".css": "text/css", ".svg": "image/svg+xml"}
 _MENTION = re.compile(r"@cortex\b", re.IGNORECASE)
 _ANY_MENTION = re.compile(r"@([a-z0-9][a-z0-9_-]{1,31})", re.IGNORECASE)
-CHANNEL_SCOPE = ("vaults/shared/", "sources/")  # the agent never reads personal vaults in public
+# The agent never reads personal vaults in public — nor when reviewing code.
+CHANNEL_SCOPE = ("vaults/shared/", "sources/", "code/")
+REVIEW_SCOPE = ("vaults/shared/", "sources/", "code/")
 
 
 # -- request bodies --------------------------------------------------------
@@ -151,6 +154,10 @@ class JobBody(BaseModel):
     job: dict
 
 
+class RepoBody(BaseModel):
+    repo: dict
+
+
 # -- websocket fan-out ------------------------------------------------------
 
 
@@ -193,6 +200,7 @@ def build_app(brain: Brain) -> FastAPI:
     reindex_wanted = asyncio.Event()
     state: dict = {"runtime": None, "indexing": False, "model_error": ""}
     agent_lock = asyncio.Lock()  # one agent turn at a time keeps SQLite happy
+    sync_locks: dict[str, asyncio.Lock] = {}  # one sync per repo at a time
 
     # tools that write (capture_note, complete_task) ask the brain to
     # re-index; here that means nudging the debounced worker below
@@ -207,16 +215,21 @@ def build_app(brain: Brain) -> FastAPI:
         worker = asyncio.create_task(_reindex_worker())
         schedule = asyncio.create_task(_connector_worker())
         clock = asyncio.create_task(_job_worker())
+        repos = asyncio.create_task(_repo_worker())
         try:
             yield
         finally:
             worker.cancel()
             schedule.cancel()
             clock.cancel()
+            repos.cancel()
             await runtime.__aexit__(None, None, None)
             brain.close()
 
     app = FastAPI(title=brain.config.name, docs_url=None, redoc_url=None, lifespan=lifespan)
+    # Reachable for tests, which swap the runtime for a stub that answers
+    # without a model; nothing in the app reads it from here.
+    app.state.agent = state
 
     async def _reindex_worker() -> None:
         """Debounced incremental re-index after vault writes/imports."""
@@ -321,7 +334,148 @@ def build_app(brain: Brain) -> FastAPI:
             })
             return ("ok", f"posted into #{channel_name}")
 
+        if job.kind == "code_review":
+            return await _run_review(job)
+
         return ("error", f"unknown job kind {job.kind}")
+
+    # -- repositories and reviews ------------------------------------------
+
+    def _repo(name: str):
+        return next((r for r in brain.repos() if r.name == name), None)
+
+    async def _sync_repo(repo) -> codemod.SyncResult:
+        """Fetch one repo, record how it went, and re-index if it moved."""
+        lock = sync_locks.setdefault(repo.name, asyncio.Lock())
+        async with lock:
+            try:
+                result = await asyncio.to_thread(codemod.sync, brain.config, repo)
+            except codemod.RepoError as exc:
+                brain.store.record_repo_sync(repo.name, "error", str(exc))
+                await ws_manager.broadcast(
+                    {"type": "repo_synced", "repo": repo.name, "status": "error"}
+                )
+                raise
+            verb = "cloned" if result.fresh else ("updated to" if result.changed else "already at")
+            detail = f"{verb} {result.head[:10]}"
+            brain.store.record_repo_sync(
+                repo.name, "ok", detail, result.head, result.subject
+            )
+            brain.refresh_code_roots()
+            if result.changed:
+                reindex_wanted.set()
+            await ws_manager.broadcast(
+                {"type": "repo_synced", "repo": repo.name, "status": "ok", "head": result.head}
+            )
+            return result
+
+    async def _run_review(job) -> tuple[str, str]:
+        """Sync, diff since the last look, ask the agent, write the note.
+
+        The note is written HERE from the answer, not by the model calling
+        write_note: the one step that must happen is done by code.
+        """
+        settings = job.settings
+        repo = _repo(settings.get("repo", ""))
+        if repo is None:
+            return ("error", f"no repository named {settings.get('repo')!r} in the Code tab")
+        if not repo.enabled:
+            return ("error", f"{repo.name} is switched off in the Code tab")
+        try:
+            synced = await _sync_repo(repo)
+        except codemod.RepoError as exc:
+            return ("error", f"sync failed: {exc}")
+
+        target = repo.clone_dir(brain.config)
+        meta_key = f"review_head:{job.name}"
+        base = brain.store.meta_get(meta_key) or ""
+        mode = settings.get("mode", "changes")
+        if mode == "changes":
+            if base and not await asyncio.to_thread(codemod.has_commit, target, base):
+                base = ""  # history rewritten, or older than the clone keeps
+            if base == synced.head:
+                # Nothing new means nothing written: a review that says
+                # "no changes" is what teaches people to stop reading them.
+                return ("ok", f"no new commits since {base[:10]}; nothing to review")
+            if not base:
+                mode = "full"  # a first look reviews the codebase, not a diff
+
+        inp = codemod.ReviewInput(
+            repo=repo, base=base if mode == "changes" else "", head=synced.head,
+            mode=mode, focus=settings.get("focus") or codemod.DEFAULT_FOCUS,
+            prior=[r["name"] for r in codemod.list_reviews(brain.config, repo=repo.name)],
+        )
+        if mode == "changes":
+            inp.log = await asyncio.to_thread(codemod.log, target, 50, base)
+            inp.commits = await asyncio.to_thread(codemod.commit_count, target, base)
+            inp.stat, inp.patch, inp.truncated = await asyncio.to_thread(
+                codemod.diff, target, base
+            )
+        else:
+            inp.log = await asyncio.to_thread(codemod.log, target, 30)
+            inp.tree = await asyncio.to_thread(codemod.tree, target, "", 3)
+        brief = codemod.review_brief(inp)
+
+        async def sink(event: AgentEvent) -> None:
+            pass  # a scheduled run has nobody to stream to
+
+        try:
+            async with agent_lock:
+                with scope.scoped(REVIEW_SCOPE, "cortex"):
+                    answer = await state["runtime"].run(
+                        f"review-{job.name}-{time.time_ns()}", brief, sink
+                    )
+        except Exception as exc:  # noqa: BLE001 - name the endpoint, not "Connection error."
+            return ("error", _explain_model_failure(exc, brain))
+        rel = await asyncio.to_thread(
+            codemod.write_review, brain.config, repo, job.name, inp.base, synced.head, answer
+        )
+        brain.store.meta_set(meta_key, synced.head)
+        await _after_write("shared", rel)
+        findings, _ = codemod.count_findings(answer)
+        span = f"{inp.base[:7]}..{synced.head[:7]}" if inp.base else synced.head[:7]
+        detail = f"wrote vaults/shared/{rel} ({span}) — {findings} finding(s)"
+
+        channel_name = settings.get("channel") or ""
+        if channel_name:
+            text = (
+                f"Reviewed **{repo.name}** at {span}: {findings} finding(s) waiting for "
+                f"approval in vaults/shared/{rel}"
+            )
+            channel_id = brain.store.ensure_channel(channel_name, "cortex")
+            message_id, at = brain.store.add_channel_message(channel_id, "cortex", text)
+            await ws_manager.broadcast({
+                "type": "channel_message",
+                "channel_id": channel_id,
+                "message": {"id": message_id, "author": "cortex", "body": text, "at": at},
+            })
+            detail += f", posted into #{channel_name}"
+        return ("ok", detail)
+
+    async def _repo_worker() -> None:
+        """Keep the clones fresh. A repo with sync_hours 0 is manual."""
+        await asyncio.sleep(12)
+        while True:
+            try:
+                for repo in brain.repos():
+                    if not repo.enabled or repo.sync_hours <= 0:
+                        continue
+                    if repo.last_sync:
+                        try:
+                            last = datetime.fromisoformat(repo.last_sync)
+                        except ValueError:
+                            last = None
+                        if last is not None and (
+                            (datetime.now(UTC) - last).total_seconds() < repo.sync_hours * 3600
+                        ):
+                            continue
+                    try:
+                        await _sync_repo(repo)
+                    except codemod.RepoError as exc:
+                        print(f"repo {repo.name}: {exc}", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001 - a bad cycle must not end the loop
+                print(f"repo sync error: {exc}", file=sys.stderr)
+            await asyncio.sleep(60)
 
     async def _job_worker() -> None:
         """The clock. Checks every minute for work that is due."""
@@ -395,6 +549,9 @@ def build_app(brain: Brain) -> FastAPI:
 
     def user_scope(user: dict) -> tuple[str, ...]:
         extra = [p.name for p in brain.config.extra_paths if p.is_dir()]
+        # Every repo in the Code tab is readable by everyone on the brain —
+        # adding one is the decision to share it.
+        extra.append("code")
         return scope.user_prefixes(user["username"], extra)
 
     # One throttle per app instance. In-process is the right scope: cortex is a
@@ -1399,6 +1556,9 @@ def build_app(brain: Brain) -> FastAPI:
             "connectors": sorted(
                 extensions.effective_connectors(brain.config, brain.store)
             ),
+            "repos": [r.name for r in brain.repos()],
+            "review_modes": list(codemod.REVIEW_MODES),
+            "default_focus": codemod.DEFAULT_FOCUS,
         }
 
     @app.put("/api/jobs")
@@ -1427,6 +1587,82 @@ def build_app(brain: Brain) -> FastAPI:
             status, detail = "error", str(exc)
         brain.store.record_job_run(name, status, detail)
         return {"name": name, "status": status, "detail": detail}
+
+    # -- code: repositories and reviews ------------------------------------
+    #
+    # Anyone may see which repos the brain reads and what it wrote about
+    # them; adding, syncing and removing a repo is admin work, because a
+    # repo is read by everyone on the brain once it is in.
+
+    @app.get("/api/repos")
+    def repos_list(user: dict = Depends(current_user)) -> dict:
+        return {
+            "repos": [r.as_dict(brain.config) for r in brain.repos()],
+            "providers": list(codemod.PROVIDERS),
+            "token_envs": dict(codemod.DEFAULT_TOKEN_ENV),
+            "env_path": str(brain.config.env_path),
+        }
+
+    @app.put("/api/repos")
+    async def repo_save(body: RepoBody, user: dict = Depends(admin_user)) -> dict:
+        try:
+            repo = codemod.parse_repo(body.repo)
+        except codemod.RepoError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        previous = _repo(repo.name)
+        if previous is not None and (
+            previous.clone_url() != repo.clone_url() or previous.branch != repo.branch
+        ):
+            # A different remote or branch is a different clone; drop the
+            # old one so the next sync starts clean rather than fast-
+            # forwarding onto unrelated history.
+            await asyncio.to_thread(codemod.remove_clone, brain.config, repo.name)
+        brain.store.upsert_repo(repo.name, json.dumps(repo.spec()), repo.enabled)
+        brain.refresh_code_roots()
+        if previous is not None and previous.enabled != repo.enabled:
+            reindex_wanted.set()  # switched off drops out of the index
+        saved = _repo(repo.name)
+        return (saved or repo).as_dict(brain.config)
+
+    @app.post("/api/repos/{name}/sync")
+    async def repo_sync(name: str, user: dict = Depends(admin_user)) -> dict:
+        repo = _repo(name)
+        if repo is None:
+            raise HTTPException(status_code=404, detail="no such repository")
+        try:
+            result = await _sync_repo(repo)
+        except codemod.RepoError as exc:
+            return {"name": name, "status": "error", "detail": str(exc)}
+        saved = _repo(name)
+        return {
+            "name": name,
+            "status": "ok",
+            "detail": saved.last_detail if saved else "",
+            "head": result.head,
+            "changed": result.changed,
+        }
+
+    @app.delete("/api/repos/{name}")
+    async def repo_delete(name: str, user: dict = Depends(admin_user)) -> dict:
+        if not brain.store.delete_repo(name):
+            raise HTTPException(status_code=404, detail="no such repository")
+        # A review job for a repo that is gone would fail every interval and
+        # say so every time; take it with the repo, and say which.
+        removed = []
+        for job in _load_jobs():
+            if job.kind == "code_review" and job.settings.get("repo") == name:
+                brain.store.delete_job(job.name)
+                removed.append(job.name)
+        await asyncio.to_thread(codemod.remove_clone, brain.config, name)
+        brain.refresh_code_roots()
+        reindex_wanted.set()
+        return {"ok": True, "jobs_removed": removed}
+
+    @app.get("/api/reviews")
+    def reviews_list(user: dict = Depends(current_user), repo: str = "") -> dict:
+        """What the brain has written about the code, newest first. The
+        review notes live in the shared vault, so any member may read them."""
+        return {"reviews": codemod.list_reviews(brain.config, repo=repo)}
 
     # -- admin ------------------------------------------------------------
 

@@ -102,6 +102,75 @@ Questions about how something in the house works:
 """,
     ),
     LibrarySkill(
+        name="code-review",
+        description="Review a repository or a set of commits with the brain's context open",
+        instructions="""\
+When asked to review code — a repository, a branch, the last few commits, a file:
+
+1. Call list_repos to find the repository. If it is not shared with the brain,
+   say so: an admin adds it in the Code tab, and you cannot read it otherwise.
+2. Get context BEFORE judging: search_brain for the project's conventions and
+   architecture notes, recall for known decisions, and read the earlier notes
+   under vaults/shared/reviews/ plus reviews/_worklog.md so you neither repeat
+   an open finding nor re-raise a fixed one.
+3. Scope it: repo_log for the history, repo_diff between the two commits in
+   question, repo_tree to orient, then read_file (keys code/<repo>/<path>) for
+   anything the diff does not show whole. Read before you comment — a finding
+   without a file and line is an opinion.
+4. Write the review in the review shape: a short summary, then `## Findings`
+   with one line per finding —
+   `- [ ] **F1 · title** — high|medium|low · path:line — what, why, the fix` —
+   most important first, then `## Worth knowing` for the rest. Leave every
+   box unticked: a tick is a human's approval for an agent to act, never yours.
+5. Save it with write_note to reviews/<repo>-<date>.md in the shared vault
+   when asked to keep it; a review in chat only is fine when it is not.
+
+Prefer fewer findings you have verified to many you have not.
+""",
+    ),
+    LibrarySkill(
+        name="deep-research",
+        description="Research a question across the web and the brain, and write up what holds",
+        instructions="""\
+For a question that deserves more than a quick answer:
+
+1. Restate the question in one line and say what would count as an answer.
+   If it is ambiguous, ask one clarifying question before spending effort.
+2. Check the brain first — search_brain, recall, transcript_search — so you
+   build on what is already known and do not redo settled work.
+3. Search the web in rounds, not in one go: 3-5 distinct queries phrased
+   differently (the thing, its alternatives, its problems, "<thing> vs"),
+   then fetch_url the results that look primary — official docs, papers,
+   the author's own words — over aggregators. Follow the best sources one
+   hop further when they point somewhere.
+4. Cross-check every claim you intend to keep against a second source. Note
+   where sources disagree and say which you trust and why; note what you
+   could not verify rather than dropping it silently.
+5. Write it up with write_note to research/<slug>.md in the shared vault:
+   the question, the short answer, the evidence (each point with its URL),
+   open questions, and the date. Keep it under two pages.
+6. Offer to `remember` the one or two durable facts, as kind `fact` with a
+   subject, so the next question does not start from zero.
+
+Say plainly when the web did not settle it. A confident wrong answer costs
+more than an honest incomplete one.
+""",
+    ),
+    LibrarySkill(
+        name="web-lookup",
+        description="Look something up on the web and answer with sources",
+        instructions="""\
+For a factual question the brain does not hold — a price, a date, a version,
+what something is:
+
+1. One web_search, well phrased. Read the top result or two with fetch_url;
+   never answer from a snippet alone.
+2. Answer in two or three sentences, then the URL(s) you used.
+3. If the sources disagree or the page would not load, say so.
+4. Do not save anything unless asked; clip_url keeps a page when they want it.
+""",
+    ),
+    LibrarySkill(
         name="inbox-triage",
         description="Sort today's captured lines into what needs doing",
         instructions="""\

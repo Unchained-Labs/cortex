@@ -8,14 +8,18 @@ kinds ship:
 * ``rules``     — apply the tidying rules (or preview them)
 * ``digest``    — write today's digest into a vault note
 * ``channel_digest`` — post today's digest into a channel
+* ``code_review`` — review a repository's new commits into ``reviews/``
 
 Deliberately *not* a kind: "ask the model something and notify me". The
 research on proactive assistants is one-sided — every large "AI decides
 what you need today" product shipped since 2024 has been retired, and the
 survivors are the ones where the user declared what they wanted. Every job
-here is declared, deterministic, and produces a fact rather than an
-opinion. A model-written briefing can be added later; it should not be the
-thing that gets built first.
+here is declared and produces something a person asked for.
+
+``code_review`` is the one kind that runs the model, and it keeps to that
+rule: the input is declared (this repo, these commits, this focus), the
+output is a note a person reads and ticks — nothing acts on a finding until
+someone approves it — and a run with no new commits writes nothing at all.
 
 Intervals are hours, not cron. "Daily", "twice a day" and "hourly" are the
 things people actually ask for, and an interval is legible in a panel where
@@ -28,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-JOB_KINDS = ("connector", "index", "rules", "digest", "channel_digest")
+JOB_KINDS = ("connector", "index", "rules", "digest", "channel_digest", "code_review")
 MIN_INTERVAL_HOURS = 0.25
 
 
@@ -106,6 +110,9 @@ def _kind_phrase(job: Job) -> str:
         return f"write today's digest into {settings.get('vault', 'shared')}"
     if job.kind == "channel_digest":
         return f"post today's digest into #{settings.get('channel', 'general')}"
+    if job.kind == "code_review":
+        what = "the whole of" if settings.get("mode") == "full" else "new commits in"
+        return f"review {what} {settings.get('repo', '?')}"
     return job.kind
 
 
@@ -129,6 +136,13 @@ def parse_job(raw: dict) -> Job:
         raise JobError("a connector job needs which connector to run")
     if kind == "channel_digest" and not str(settings.get("channel", "")).strip():
         settings["channel"] = "general"
+    if kind == "code_review":
+        from cortex.code import RepoError, parse_review_settings
+
+        try:
+            settings = parse_review_settings(settings)
+        except RepoError as exc:
+            raise JobError(str(exc)) from exc
     return Job(
         name=name,
         kind=kind,

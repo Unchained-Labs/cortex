@@ -48,7 +48,14 @@ and recent changes.
 digest or search reported. Never guess a line number.
 9. If a search returns nothing relevant, say so plainly. Do not fabricate \
 content that is not in the brain.
-10. Answer in the language the user writes in."""
+10. The brain may hold code: list_repos names the repositories, their files are \
+read with read_file on keys like code/<repo>/src/main.py, and repo_log and \
+repo_diff show history. Cite code as code/<repo>/<path>:<line>.
+11. For the wider world — current events, documentation, anything the brain does \
+not hold — use web_search and then fetch_url on what looks right. Say when an \
+answer came from the web, cite the URL, and never present a search snippet as \
+something you verified.
+12. Answer in the language the user writes in."""
 
 
 def build_system_prompt(name: str, persona: str, skills: list[Skill]) -> str:

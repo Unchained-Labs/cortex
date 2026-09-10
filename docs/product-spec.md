@@ -196,13 +196,60 @@ always available and free, and every applied change is logged.
 **Jobs** are the clock. Kinds: `connector` (settings `{connector}`), `index`, `rules`
 (settings `{dry_run}`), `digest` (settings `{vault}`, writes `briefings/<day>.md`),
 `channel_digest` (settings `{channel}`, posts into a channel and **posts nothing when the
-digest is empty**). Intervals are hours, not cron.
+digest is empty**), `code_review` (settings `{repo, mode: "changes"|"full", focus,
+channel?}`, below). Intervals are hours, not cron.
 
-- `GET /api/jobs` → `{jobs: [J], suggested: [J], kinds, connectors}`; J is
-  `{name, kind, interval_hours, settings, enabled, last_run, last_status, last_detail,
-  describes}`. `describes` again reads as a sentence ("apply the tidying rules daily").
+- `GET /api/jobs` → `{jobs: [J], suggested: [J], kinds, connectors, repos, review_modes,
+  default_focus}`; J is `{name, kind, interval_hours, settings, enabled, last_run,
+  last_status, last_detail, describes}`. `describes` again reads as a sentence ("apply the
+  tidying rules daily", "review new commits in cortex daily"). `repos` are the names a
+  `code_review` job may use.
 - `PUT /api/jobs {job}` → saved job or 422.
 - `DELETE /api/jobs/{name}`, `POST /api/jobs/{name}/run` → `{name, status, detail}`.
+
+### Code: repositories and reviews
+
+A repository is a GitHub or GitLab clone kept under `.cortex/repos/<name>` and indexed
+under the key prefix `code/<name>/`, readable by **every** signed-in user and by the agent
+(adding it is the decision to share it). Reading the list and the reviews is open to all;
+adding, syncing and removing is admin-only. Tokens never cross this API: a repo names the
+environment variable holding its token (`token_env`), the server reads it from the shell
+or from `.env` beside cortex.yaml, and responses carry only `token_present`.
+
+- `GET /api/repos` → `{repos: [R], providers, token_envs, env_path}` where R is
+  `{name, provider, slug, host, branch, token_env, sync_hours, enabled, url, token_present,
+  last_sync, last_status, last_detail, head, head_subject, cloned, prefix}`.
+  `sync_hours: 0` means manual. Show `last_detail` in `--ul-up`/`--ul-down` like a job.
+- `PUT /api/repos {repo}` (admin) → R, or **422 with a plain reason**. `slug` accepts
+  `owner/name`, a web URL, or `git@host:owner/name.git`; `name` defaults to the last path
+  segment. Changing the remote or branch of an existing repo discards its clone. Nothing
+  is cloned by PUT — the client calls sync next, so a failure has somewhere to be shown.
+- `POST /api/repos/{name}/sync` (admin) → `{name, status, detail, head?, changed?}`.
+  `status: "error"` carries git's reason in `detail` (authentication, not found, no
+  network) rather than a 5xx; a successful sync that moved the head queues a re-index.
+- `DELETE /api/repos/{name}` (admin) → `{ok, jobs_removed: [name]}` — the clone is deleted
+  and every `code_review` job of that repo with it; review notes already written stay.
+- `GET /api/reviews?repo=` → `{reviews: [{path, name, mtime, repo, job, reviewed, date,
+  title, findings, approved}]}`, newest first. `path` is an index key
+  (`vaults/shared/reviews/<repo>-<date>.md`) for the Vault view; `approved` counts ticked
+  findings, live from the file.
+- Files of a repo are read like any indexed file: `GET /api/file?path=code/<name>/<path>`
+  (`editable: false`), and they appear in `/api/search`.
+- WebSocket: `{type: "repo_synced", repo, status, head?}` after any sync, scheduled or
+  manual.
+
+**A `code_review` job** syncs the repo, diffs from the commit it last reviewed (stored
+per job) to the head, and runs the agent with a brief carrying the log, the file list and
+the patch (cut at 48k characters, with the file list left whole so the model knows what it
+did not see), the `focus`, and instructions to read the brain — conventions, earlier
+reviews, the worklog — before judging. The agent runs at shared-vault scope: never a
+personal vault. The server writes the answer to `reviews/<repo>-<date>.md` (a suffix on a
+second review the same day, never an overwrite) with frontmatter `repo, job, reviewed,
+date, findings`, **stripping every tick** — a tick is a human's approval and the model may
+not set one. `mode: "changes"` with nothing new returns `ok` and writes nothing; the first
+run of a `changes` review, or `mode: "full"`, reviews the whole codebase from its layout
+and recent history. With `channel` set, one line naming the note and the finding count is
+posted only when a note was written.
 
 ### Admin (role=admin only)
 - `GET /api/admin/users` → `{users: [{username, role, created_at}]}`
@@ -252,6 +299,15 @@ Views (tabs in the header, brand lockup at left):
    read-only with a "defined in cortex.yaml" note. A visible warning states that
    saving code executes it on the server.
 6. **Admin** (admins only) — user management + `/api/info` stats.
+7. **Code** (everyone; admin controls) — three panels in the Automation layout:
+   **Repositories** (name, provider badge, slug linking to the host, branch, `code/<name>/`
+   prefix, refresh interval, last sync in `--ul-up`/`--ul-down`, a note when the token
+   variable is unset; admins get Enabled, Sync now, Edit, Delete and an Add drawer that
+   syncs on save), **Scheduled reviews** (admins only: the `code_review` jobs as
+   sentences with Enabled, Review now, Edit, Delete, and a drawer with repo, interval,
+   mode, a free-text focus and an optional channel), and **Reviews** (every note under
+   `reviews/`, newest first, with `N findings, K approved` and Open → the Vault view).
+   Review jobs are hidden from the Automation tab's list, which says where they live.
 
 ### Identity in the dashboard (v0.4)
 

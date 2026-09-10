@@ -35,6 +35,13 @@ services:
       # this file and mounts that, so the tools would find no sessions and say
       # so rather than failing.
       - ${CLAUDE_CONFIG_DIR:-/home/jarvis/.claude}:/transcripts/.claude:ro
+    # Tokens for the Code tab (GITHUB_TOKEN, GITLAB_TOKEN), a search backend
+    # (CORTEX_SEARCH_URL or BRAVE_SEARCH_API_KEY) and any api_key_env in
+    # cortex.yaml. Optional here because cortex also reads /brain/.env itself;
+    # this one is for keeping secrets beside the compose file instead.
+    env_file:
+      - path: .env
+        required: false
     environment:
       CORTEX_BRAIN: /brain
       # Where the transcript tools look. Absolute, because compose does not

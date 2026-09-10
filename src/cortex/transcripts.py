@@ -34,7 +34,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class Session:
 
     @property
     def when(self) -> str:
-        return datetime.fromtimestamp(self.modified, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+        return datetime.fromtimestamp(self.modified, tz=UTC).strftime("%Y-%m-%d %H:%M")
 
 
 def sessions(config_dir: str | None = None, project: str = "", limit: int = 200) -> list[Session]:

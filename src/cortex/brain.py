@@ -20,7 +20,9 @@ from cortex.memory.store import Store
 from cortex.obs import Obs
 from cortex.plugins import ToolRegistry
 from cortex.plugins.builtin import register_builtin
+from cortex.plugins.code_tools import register_code_tools
 from cortex.plugins.skills import load_skills, register_skill_tool
+from cortex.plugins.web import register_web_tools
 from cortex.providers import Embedder, ProviderError, chat_model
 from cortex.providers.endpoint import endpoint_scope
 
@@ -32,6 +34,7 @@ class Brain:
         self.obs = Obs(self.config.usage_path)
         self.skills: list = []
         self.registry = ToolRegistry()
+        self.refresh_code_roots()
         self.load_extensions()
         self._reindex_hook = None
         self._chat_model: BaseChatModel | None = None
@@ -50,12 +53,33 @@ class Brain:
         ]
         registry = ToolRegistry()
         register_builtin(registry, self)
+        register_code_tools(registry, self)
+        register_web_tools(registry, self)
         register_skill_tool(registry, self.skills)
         registry.load_directory(
             self.config.plugins_dir, skip=self.store.disabled_names("plugin")
         )
         registry.load_entry_points()
         self.registry = registry
+
+    def repos(self) -> list:
+        """Every repository in the Code tab, with its last sync."""
+        from cortex.code import RepoError, repo_from_row
+
+        out = []
+        for row in self.store.list_repos():
+            try:
+                out.append(repo_from_row(row))
+            except (RepoError, ValueError):
+                continue
+        return out
+
+    def refresh_code_roots(self) -> None:
+        """Tell the config which clones to index and resolve. Called at
+        startup and whenever a repo is added, removed or switched off."""
+        self.config.code_roots = [
+            (repo.prefix, repo.clone_dir(self.config)) for repo in self.repos() if repo.enabled
+        ]
 
     def request_reindex(self) -> None:
         """Ask the host to re-index soon. The dashboard wires this to its

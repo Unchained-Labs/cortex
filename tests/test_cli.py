@@ -20,7 +20,7 @@ from cortex import cli
 
 SUBCOMMANDS = [
     "setup", "init", "index", "status", "chat", "serve", "mcp", "connectors",
-    "service", "note", "demo", "new", "templates", "clip", "today", "ext", "users",
+    "service", "note", "demo", "new", "templates", "clip", "today", "ext", "users", "repos",
 ]
 
 
@@ -32,7 +32,11 @@ def run(argv: list[str]) -> tuple[int, str, str]:
         try:
             cli.main(argv)
         except SystemExit as e:  # argparse exits this way, including on --help
-            code = int(e.code or 0)
+            if isinstance(e.code, str):  # sys.exit("error: …") — the message is the code
+                err.write(e.code)
+                code = 1
+            else:
+                code = int(e.code or 0)
     return code, out.getvalue(), err.getvalue()
 
 
@@ -105,3 +109,13 @@ def test_users_lists_nobody_on_a_fresh_brain(brain_dir: Path):
     code, out, err = run(["users", "list", "--brain", str(brain_dir)])
     assert code == 0
     assert (out + err).strip()
+
+
+def test_repos_list_on_an_empty_brain(brain_dir: Path):
+    code, out, _ = run(["repos", "list", "--brain", str(brain_dir)])
+    assert code == 0 and "no repositories" in out
+
+
+def test_repos_add_refuses_a_bad_name(brain_dir: Path):
+    code, _, err = run(["repos", "add", "not-a-slug", "--brain", str(brain_dir)])
+    assert code != 0 and "owner/name" in err

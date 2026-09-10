@@ -6,6 +6,43 @@ that while cortex is `0.x` the minor number carries breaking changes.
 
 ## [Unreleased]
 
+The brain can read your code, review it on a schedule, and look things up.
+
+### Added
+
+- **A Code tab.** Add a GitHub or GitLab repository (`owner/name` or a
+  URL, a branch if not the default) and cortex keeps a shallow clone under
+  `.cortex/repos/`, refreshes it on an interval, and indexes it under
+  `code/<name>/` — so the agent searches notes and code together and cites
+  `code/cortex/src/cortex/jobs.py:41` like a note. Four tools go with it:
+  `list_repos`, `repo_tree`, `repo_log`, `repo_diff`. `cortex repos
+  add|list|sync|remove` does the same from a terminal.
+- **Scheduled code reviews**, a job kind. Pick a repo, an interval, what to
+  look for and optionally a channel; each run syncs, diffs from the commit
+  it last reviewed, reads the brain for context (conventions, earlier
+  reviews, the worklog) and writes `reviews/<repo>-<date>.md` in the shape
+  the approval loop already reads — one `- [ ] **F1 · title**` line per
+  finding. The note is written by the server from the model's answer, with
+  every tick stripped: a tick is a human's approval, and the reviewer may
+  not grant itself one. A run with no new commits writes nothing.
+- **`.env` beside `cortex.yaml` is loaded on start.** Repo tokens
+  (`GITHUB_TOKEN`, `GITLAB_TOKEN`), a search backend, and any `api_key_env`
+  come from there when the shell did not set them. Tokens reach git as a
+  per-host header through `GIT_CONFIG_*`, never in `argv` or `.git/config`.
+- **The agent can use the web.** `web_search` (SearXNG via
+  `CORTEX_SEARCH_URL`, Brave via `BRAVE_SEARCH_API_KEY`, or DuckDuckGo's
+  HTML page with no key — which says so when it breaks) and `fetch_url`
+  (a page as readable text; saves nothing). Three library skills use them:
+  `web-lookup`, `deep-research`, and `code-review`.
+
+### Changed
+
+- The system prompt tells the agent about repositories and the web, and
+  asks it to say when an answer came from the web and cite the URL.
+- `GET /api/jobs` also returns `repos`, `review_modes` and `default_focus`;
+  `code_review` jobs are managed in the Code tab and hidden from Automation.
+- `docker-compose.yml` reads an optional `.env` beside it.
+
 ## [0.5.0] - 2026-08-27
 
 Sign-in is no longer a free guessing loop, and the CLI has tests.
