@@ -59,6 +59,25 @@ The brain can read your code, review it on a schedule, and look things up.
   `code_review` jobs are managed in the Code tab and hidden from Automation.
 - `docker-compose.yml` reads an optional `.env` beside it.
 
+### Changed (dashboard)
+
+- **Extend, Automation and Admin live under one Settings tab** with a side
+  nav. Ten tabs across the top made the ones that matter daily harder to
+  find; everyday tabs are things people do, these are things someone sets
+  up once.
+- **The Code tab says its state in pills, not sentences.** `synced 2h ago`,
+  `syncing`, `needs a token`, `sync failed`, `paused`; `ran`, `reviewing`,
+  `failed` on a review. Each row keeps one primary action (Sync now, Review
+  now) and puts Edit, Pause and Remove behind a `⋯` menu. Reviews show
+  severity counts (`2 medium`, `1 low`) and `approved` / `waiting`. With no
+  repositories, an admin gets a three-step start instead of three empty
+  panels; the failure text and the token hint appear only after a failed
+  sync.
+- **Your own save no longer looks like someone else's.** Ticking a checkbox
+  in the vault preview used to announce "this file changed on the server"
+  about the change just made, because the write's own echo arrived while
+  the editor was still marked dirty.
+
 ## [0.5.0] - 2026-08-27
 
 Sign-in is no longer a free guessing loop, and the CLI has tests.

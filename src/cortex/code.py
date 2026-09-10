@@ -573,6 +573,22 @@ def count_findings(text: str) -> tuple[int, int]:
     return total, approved
 
 
+_SEVERITY_RE = re.compile(r"\*\*\s*[—-]\s*(?P<sev>high|medium|low)\b", re.IGNORECASE)
+
+
+def count_severities(text: str) -> dict[str, int]:
+    """How many findings say high, medium or low — the pills the Code tab
+    shows so a review's weight reads without opening it."""
+    out = {"high": 0, "medium": 0, "low": 0}
+    for line in text.splitlines():
+        if not FINDING_RE.match(line):
+            continue
+        m = _SEVERITY_RE.search(line)
+        if m:
+            out[m.group("sev").lower()] += 1
+    return out
+
+
 def write_review(
     config: BrainConfig,
     repo: Repo,
@@ -632,6 +648,7 @@ def parse_review(text: str) -> dict[str, Any]:
                 meta[key.strip().lower()] = value.strip()
     title = next((ln.lstrip("# ").strip() for ln in lines if ln.startswith("# ")), "")
     findings, approved = count_findings(text)
+    severities = count_severities(text)
     return {
         "repo": meta.get("repo", ""),
         "job": meta.get("job", ""),
@@ -640,6 +657,7 @@ def parse_review(text: str) -> dict[str, Any]:
         "title": title,
         "findings": findings,
         "approved": approved,
+        **severities,
     }
 
 

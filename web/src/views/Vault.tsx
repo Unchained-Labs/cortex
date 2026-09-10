@@ -105,6 +105,8 @@ export default function Vault({
   // the same keystroke; without this guard the second concurrent save races
   // the first and 409s against its own sibling.
   const savingRef = useRef(false);
+  /** the last file this tab wrote and when, so its own echo is not "a change" */
+  const ownWriteRef = useRef<{ path: string; at: number } | null>(null);
   const openPathRef = useRef(openPath);
   openPathRef.current = openPath;
   const sourceRef = useRef(source);
@@ -274,13 +276,18 @@ export default function Vault({
     [confirmDiscard, loadTree, openFile, selectVault],
   );
 
-  // Another session saved a file we may have open.
+  // Another session saved a file we may have open. Our own saves echo back
+  // through the same socket, and until the ownWrite check they arrived while
+  // the editor was still marked dirty — so ticking a checkbox in the preview
+  // announced "this file changed on the server" about the change just made.
   useEffect(
     () =>
       wsSubscribe((ev) => {
         if (ev.type !== "vault_changed") return;
         if (ev.vault !== vaultRef.current) return;
         void loadTree(ev.vault).catch(() => {});
+        const own = ownWriteRef.current;
+        if (own && own.path === ev.path && Date.now() - own.at < 3000) return;
         if (ev.path === openPathRef.current) {
           if (dirtyRef.current) {
             setNotice("This file changed on the server. Saving will surface a conflict.");
@@ -305,6 +312,7 @@ export default function Vault({
         const body: Record<string, unknown> = { vault: v, path: p, text };
         const base = forceBase ?? baseMtime;
         if (base !== null && base !== undefined) body.base_mtime = base;
+        ownWriteRef.current = { path: p, at: Date.now() };
         const r = await apiSend<{ mtime: number }>("PUT", "/api/vault/file", body);
         setBaseMtime(r.mtime);
         setSavedText(text);
@@ -378,6 +386,7 @@ export default function Vault({
         try {
           const body: Record<string, unknown> = { vault: v, path: p, text: next };
           if (baseMtime !== null) body.base_mtime = baseMtime;
+          ownWriteRef.current = { path: p, at: Date.now() };
           const r = await apiSend<{ mtime: number }>("PUT", "/api/vault/file", body);
           setBaseMtime(r.mtime);
           setSavedText(next);

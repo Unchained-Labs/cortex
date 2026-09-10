@@ -438,6 +438,10 @@ export interface Review {
   title: string;
   findings: number;
   approved: number;
+  /** findings by the severity word on their line; the rest are unrated */
+  high: number;
+  medium: number;
+  low: number;
 }
 
 export interface JobRun {

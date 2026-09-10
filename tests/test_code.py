@@ -224,6 +224,20 @@ def test_write_review_unticks_and_records_frontmatter(brain: Brain):
     assert "F1" in brain.registry.invoke("approved_findings", {}).text
 
 
+def test_severities_are_counted_per_finding():
+    text = (
+        "# r\n\n## Findings\n"
+        "- [ ] **F1 · a** — high · `x.py:1` — text\n"
+        "- [x] **F2 · b** — Medium · `x.py:2` — text\n"
+        "- [ ] **F3 · c** — low · `x.py:3` — mentions high in prose\n"
+        "- [ ] **F4 · d** — `x.py:4` — no severity given\n"
+        "- plain bullet — high — not a finding\n"
+    )
+    assert code.count_severities(text) == {"high": 1, "medium": 1, "low": 1}
+    parsed = code.parse_review(text)
+    assert (parsed["findings"], parsed["approved"], parsed["high"]) == (4, 1, 1)
+
+
 def test_write_review_refuses_an_empty_answer(brain: Brain):
     repo = code.parse_repo({"provider": "github", "slug": "x/demo"})
     with pytest.raises(code.RepoError, match="empty"):
