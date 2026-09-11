@@ -22,6 +22,7 @@ from cortex.plugins import ToolRegistry
 from cortex.plugins.builtin import register_builtin
 from cortex.plugins.code_tools import register_code_tools
 from cortex.plugins.graph_tools import register_graph_tools
+from cortex.plugins.learning import register_learning_tools
 from cortex.plugins.recall import register_recall_tools
 from cortex.plugins.skills import load_skills, register_skill_tool
 from cortex.plugins.web import register_web_tools
@@ -39,6 +40,7 @@ class Brain:
         self.refresh_code_roots()
         self.load_extensions()
         self._reindex_hook = None
+        self._reload_hook = None
         self._chat_model: BaseChatModel | None = None
         self._embedder: Embedder | None = None
         self._embedder_checked = False
@@ -58,8 +60,9 @@ class Brain:
         register_code_tools(registry, self)
         register_web_tools(registry, self)
         register_graph_tools(registry, self)
+        register_learning_tools(registry, self)
         register_recall_tools(registry, self)
-        register_skill_tool(registry, self.skills)
+        register_skill_tool(registry, self.skills, on_use=self.store.bump_skill_use)
         registry.load_directory(
             self.config.plugins_dir, skip=self.store.disabled_names("plugin")
         )
@@ -91,6 +94,14 @@ class Brain:
         they re-index on their own schedule."""
         if self._reindex_hook is not None:
             self._reindex_hook()
+
+    def request_reload(self) -> None:
+        """A skill the agent just wrote should be on the shelf next turn.
+        The registry and shelf are rebuilt here; the dashboard also rebuilds
+        its compiled agent, which carries the shelf in its prompt."""
+        self.load_extensions()
+        if self._reload_hook is not None:
+            self._reload_hook()
 
     def mcp_servers(self) -> list:
         from cortex.extensions import effective_mcp_servers

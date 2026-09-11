@@ -26,6 +26,13 @@ The brain can read your code, review it on a schedule, and look things up.
 
 ### Added
 
+- **The brain writes its own skills.** After a multi-step job the agent
+  can save the procedure with `save_skill`, and fix a skill of its own
+  whose instructions let it down. Skills it writes are signed
+  (`author: cortex`) and shown as *written by the brain* on the Extend
+  page with how often each skill is used; a skill a person wrote is never
+  overwritten — the agent says what should change. Chat gains **Turn this
+  into a skill**. Borrowed from Hermes Agent's learning loop.
 - **It remembers what you discussed.** Past conversations are indexed
   (`messages_fts`) and searchable: the agent's `recall_conversation`
   tool answers "what did we decide about the boiler" from the thread it

@@ -81,6 +81,16 @@ function Row({
         <span className="mono ext-name">{ext.name}</span>
         {fromFile && <span className="badge">cortex.yaml</span>}
         {ext.source === "builtin" && <span className="badge">built-in</span>}
+        {ext.author === "cortex" && (
+          <span className="badge accent" title="The brain wrote this skill from experience; edit it freely">
+            written by the brain
+          </span>
+        )}
+        {ext.kind === "skill" && (ext.uses ?? 0) > 0 && (
+          <span className="muted ext-uses">
+            used {ext.uses}×{ext.last_used ? ` · last ${new Date(ext.last_used).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
+          </span>
+        )}
         <div className="ext-actions">
           {fromFile ? (
             <span className="muted ext-readonly">

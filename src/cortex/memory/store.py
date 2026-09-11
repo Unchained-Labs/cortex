@@ -174,6 +174,9 @@ CREATE TABLE IF NOT EXISTS graph_edges(
     weight REAL NOT NULL DEFAULT 1.0, PRIMARY KEY (src, dst, kind)
 );
 CREATE INDEX IF NOT EXISTS graph_edges_dst ON graph_edges(dst);
+CREATE TABLE IF NOT EXISTS skill_uses(
+    name TEXT PRIMARY KEY, uses INTEGER NOT NULL DEFAULT 0, last_used TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ext_disabled(
     kind TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (kind, name)
 );
@@ -880,6 +883,19 @@ class Store:
                 )
 
     # -- extensions -------------------------------------------------------
+    # -- skill usage --------------------------------------------------------
+    def bump_skill_use(self, name: str) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO skill_uses(name, uses, last_used) VALUES(?, 1, ?) "
+                "ON CONFLICT(name) DO UPDATE SET uses=uses+1, last_used=excluded.last_used",
+                (name, _now()),
+            )
+
+    def skill_uses(self) -> dict[str, tuple[int, str]]:
+        rows = self.db.execute("SELECT name, uses, last_used FROM skill_uses").fetchall()
+        return {r["name"]: (r["uses"], r["last_used"]) for r in rows}
+
     def is_disabled(self, kind: str, name: str) -> bool:
         return (
             self.db.execute(

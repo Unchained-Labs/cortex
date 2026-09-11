@@ -266,6 +266,10 @@ export interface Extension {
   error: string;
   source: "dashboard" | "file" | "builtin";
   detail: ExtensionDetail;
+  /** skills: "cortex" when the brain wrote it from experience */
+  author?: string;
+  uses?: number;
+  last_used?: string;
 }
 
 export interface ExtensionList {
