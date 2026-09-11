@@ -1860,3 +1860,66 @@ select { cursor: pointer; }
  * exist. Opt in per pane rather than putting overflow on .pane itself, which
  * would give the panes that DO scroll a second, nested scrollbar. */
 .settings-pane, .admin-pane { overflow-y: auto; }
+
+
+/* ---- the view frame ------------------------------------------------------
+ *
+ * Measured at 1440x900: the page itself never overflows — body is
+ * overflow:hidden and the min-height:0 chain holds all the way down. But
+ * .memory-view was 839px tall wrapped around 21,237px of content, and its own
+ * title, lead and add-form were INSIDE the scroller, so they left with the
+ * list. 200 rows in one endless column with no frame around them is what "it
+ * doesn't lock to 100% height" describes, even though every box is already
+ * exactly the height it should be.
+ *
+ * The frame was missing, not the constraint.
+ *
+ * The first attempt made the head `position: sticky` — one rule, no JSX. It
+ * looked wrong immediately and the screenshot is why this comment exists: the
+ * scroller carries padding-top, so `top: 0` parks the band BELOW the scroller's
+ * own edge and rows stream through the gap above it. Negative margin to close
+ * the gap just moved the seam. A sticky band also has to repaint its own
+ * background over moving content, which is a hairline away from looking like a
+ * rendering fault at every zoom level.
+ *
+ * So the head is out of the scroller instead. Two boxes: a band that does not
+ * move and a body that does. It is the structure the layout already implied,
+ * and it cannot develop a seam because there is nothing to align. */
+.memory-view,
+.today-view,
+.extend-view,
+.automation-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* The scroller is the child now; this box must not scroll as well, or a tall
+   * band would give the view a second bar outside the first. */
+  overflow: hidden;
+  padding: 0;
+}
+
+/* .admin-view is deliberately not in that list. It has no head element to lift
+ * out — just a bare <h2> inside the wrap — so there is nothing to make a band
+ * from, and giving it overflow:hidden without an inner scroller would clip its
+ * content with no way to reach it. It keeps scrolling as one box until it has a
+ * head worth freezing. */
+
+.view-band {
+  flex: none;
+  padding: var(--ul-space-8) 0 var(--ul-space-5);
+  border-bottom: 1px solid var(--ul-line);
+  background: var(--ul-bg);
+}
+/* The head's own bottom margin was spacing it from the list it no longer sits
+ * above; the band's padding does that job now. */
+.view-band .memory-head,
+.view-band .today-head,
+.view-band .extend-head,
+.view-band .auto-head { margin-bottom: 0; }
+
+.view-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-6) 0 var(--ul-space-8);
+}

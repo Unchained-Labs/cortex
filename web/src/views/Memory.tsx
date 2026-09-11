@@ -11,7 +11,9 @@ function shortDate(iso: string): string {
 }
 
 /** Rows arrive ordered by kind then subject; keep that order, just fold it. */
-function groupBySubject(rows: MemoryRow[]): { subject: string; rows: MemoryRow[] }[] {
+function groupBySubject(
+  rows: MemoryRow[],
+): { subject: string; rows: MemoryRow[] }[] {
   const out: { subject: string; rows: MemoryRow[] }[] = [];
   for (const row of rows) {
     const last = out[out.length - 1];
@@ -58,7 +60,11 @@ function Row({
     setBusy(true);
     setError(null);
     try {
-      await apiSend("PUT", `/api/memory/${row.id}`, { body: body.trim(), kind, subject });
+      await apiSend("PUT", `/api/memory/${row.id}`, {
+        body: body.trim(),
+        kind,
+        subject,
+      });
       setEditing(false);
       onSaved();
     } catch (err) {
@@ -70,7 +76,12 @@ function Row({
   };
 
   const forget = async () => {
-    if (!window.confirm(`Forget this?\n\n${row.body}\n\nThe brain stops using it.`)) return;
+    if (
+      !window.confirm(
+        `Forget this?\n\n${row.body}\n\nThe brain stops using it.`,
+      )
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -88,7 +99,11 @@ function Row({
         <div className="mem-edit-fields">
           <label className="field mem-edit-body">
             <span>Memory</span>
-            <input autoFocus value={body} onChange={(e) => setBody(e.target.value)} />
+            <input
+              autoFocus
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
           </label>
           <label className="field mem-edit-kind">
             <span>Kind</span>
@@ -111,10 +126,18 @@ function Row({
           </label>
         </div>
         <div className="mem-edit-actions">
-          <button className="btn btn-sm" type="button" onClick={() => setEditing(false)}>
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={() => setEditing(false)}
+          >
             Cancel
           </button>
-          <button className="btn btn-sm primary" type="submit" disabled={!body.trim() || busy}>
+          <button
+            className="btn btn-sm primary"
+            type="submit"
+            disabled={!body.trim() || busy}
+          >
             {busy ? "Saving…" : "Save"}
           </button>
         </div>
@@ -136,7 +159,11 @@ function Row({
         <button className="btn btn-sm" onClick={open}>
           Edit
         </button>
-        <button className="btn btn-sm danger" onClick={() => void forget()} disabled={busy}>
+        <button
+          className="btn btn-sm danger"
+          onClick={() => void forget()}
+          disabled={busy}
+        >
           Forget
         </button>
       </div>
@@ -145,7 +172,13 @@ function Row({
   );
 }
 
-export default function Memory({ active, isAdmin }: { active: boolean; isAdmin: boolean }) {
+export default function Memory({
+  active,
+  isAdmin,
+}: {
+  active: boolean;
+  isAdmin: boolean;
+}) {
   const [kinds, setKinds] = useState<string[]>([]);
   const [rows, setRows] = useState<MemoryRow[]>([]);
   const [filter, setFilter] = useState(""); // "" = every kind
@@ -184,19 +217,28 @@ export default function Memory({ active, isAdmin }: { active: boolean; isAdmin: 
     setBusy(true);
     setAddError(null);
     try {
-      await apiSend("POST", "/api/memory", { body: body.trim(), kind, subject });
+      await apiSend("POST", "/api/memory", {
+        body: body.trim(),
+        kind,
+        subject,
+      });
       setBody("");
       setSubject("");
       await load(filter);
     } catch (err) {
       // 422 says why in plain words; the typed line stays where it is.
-      setAddError(err instanceof Error ? err.message : "could not remember that");
+      setAddError(
+        err instanceof Error ? err.message : "could not remember that",
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  const kindOptions = kinds.length > 0 ? kinds : ["person", "project", "preference", "goal", "fact"];
+  const kindOptions =
+    kinds.length > 0
+      ? kinds
+      : ["person", "project", "preference", "goal", "fact"];
 
   // Rows come grouped by kind, alphabetically. Read them in the order the
   // server declares its kinds instead — people and projects before loose
@@ -214,120 +256,132 @@ export default function Memory({ active, isAdmin }: { active: boolean; isAdmin: 
 
   return (
     <div className="memory-view">
-      <div className="wrap">
-        <div className="memory-head">
-          <h2>Memory</h2>
-          <p className="memory-lead">
-            What the brain believes about you and your work. It remembers what you tell it,
-            here or in chat, and everything it remembers is listed below for you to correct.
-          </p>
+      <header className="view-band">
+        <div className="wrap">
+          <div className="memory-head">
+            <h2>Memory</h2>
+            <p className="memory-lead">
+              What the brain believes about you and your work. It remembers what
+              you tell it, here or in chat, and everything it remembers is
+              listed below for you to correct.
+            </p>
+          </div>
         </div>
+      </header>
+      <div className="view-scroll">
+        <div className="wrap">
+          {/* Admins read and edit this in Admin → Identity; a second read-only
+           *  copy there would just be clutter. Members have no other way in. */}
+          {!isAdmin && <IdentityReadout active={active} />}
 
-        {/* Admins read and edit this in Admin → Identity; a second read-only
-         *  copy there would just be clutter. Members have no other way in. */}
-        {!isAdmin && <IdentityReadout active={active} />}
-
-        {error && (
-          <div className="banner banner-error">
-            <span>✗ {error}</span>
-            <button className="btn btn-sm" onClick={() => void load(filter)}>
-              Retry
-            </button>
-          </div>
-        )}
-
-        <form className="card mem-add" onSubmit={add}>
-          <div className="mem-add-row">
-            <label className="field mem-add-body">
-              <span>Remember that…</span>
-              <input
-                placeholder="sam prefers short answers"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-              />
-            </label>
-            <label className="field mem-add-kind">
-              <span>Kind</span>
-              <select value={kind} onChange={(e) => setKind(e.target.value)}>
-                {kindOptions.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field mem-add-subject">
-              <span>Subject (optional)</span>
-              <input
-                className="mono"
-                placeholder="sam"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              />
-            </label>
-            <button className="btn primary mem-add-btn" type="submit" disabled={!body.trim() || busy}>
-              {busy ? "Saving…" : "Remember"}
-            </button>
-          </div>
-          {addError && <p className="form-error mem-add-error">✗ {addError}</p>}
-        </form>
-
-        <div className="mem-filter" role="group" aria-label="Filter by kind">
-          <div className="seg">
-            <button
-              className={filter === "" ? "seg-btn active" : "seg-btn"}
-              onClick={() => setFilter("")}
-            >
-              All
-            </button>
-            {kindOptions.map((k) => (
-              <button
-                key={k}
-                className={filter === k ? "seg-btn active" : "seg-btn"}
-                onClick={() => setFilter(k)}
-              >
-                {k}
+          {error && (
+            <div className="banner banner-error">
+              <span>✗ {error}</span>
+              <button className="btn btn-sm" onClick={() => void load(filter)}>
+                Retry
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
+          )}
 
-        {byKind.map((group) => (
-          <section className="mem-group" key={group.kind}>
-            <h3 className="mem-kind">{group.kind}</h3>
-            {groupBySubject(group.rows).map((sub, i) => (
-              <div className="mem-subject-block" key={`${sub.subject}-${i}`}>
-                {sub.subject ? (
-                  <p className="mono mem-subject">{sub.subject}</p>
-                ) : (
-                  <p className="mem-subject faint">no subject</p>
-                )}
-                <div className="mem-rows">
-                  {sub.rows.map((row) => (
-                    <Row
-                      key={row.id}
-                      row={row}
-                      kinds={kindOptions}
-                      onSaved={() => void load(filter)}
-                      onForgotten={() => void load(filter)}
-                    />
+          <form className="card mem-add" onSubmit={add}>
+            <div className="mem-add-row">
+              <label className="field mem-add-body">
+                <span>Remember that…</span>
+                <input
+                  placeholder="sam prefers short answers"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                />
+              </label>
+              <label className="field mem-add-kind">
+                <span>Kind</span>
+                <select value={kind} onChange={(e) => setKind(e.target.value)}>
+                  {kindOptions.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
                   ))}
-                </div>
-              </div>
-            ))}
-          </section>
-        ))}
+                </select>
+              </label>
+              <label className="field mem-add-subject">
+                <span>Subject (optional)</span>
+                <input
+                  className="mono"
+                  placeholder="sam"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
+              </label>
+              <button
+                className="btn primary mem-add-btn"
+                type="submit"
+                disabled={!body.trim() || busy}
+              >
+                {busy ? "Saving…" : "Remember"}
+              </button>
+            </div>
+            {addError && (
+              <p className="form-error mem-add-error">✗ {addError}</p>
+            )}
+          </form>
 
-        {loaded && rows.length === 0 && !error && (
-          <p className="muted mem-empty">
-            {filter
-              ? `Nothing remembered under ${filter} yet.`
-              : "Nothing remembered yet. The brain keeps what you tell it that should outlast one " +
-                "conversation — who someone is, what a project is for, how you like answers " +
-                "written — and this is where you read it back and fix anything it got wrong. " +
-                "The agent writes here too, whenever you tell it something durable in chat."}
-          </p>
-        )}
+          <div className="mem-filter" role="group" aria-label="Filter by kind">
+            <div className="seg">
+              <button
+                className={filter === "" ? "seg-btn active" : "seg-btn"}
+                onClick={() => setFilter("")}
+              >
+                All
+              </button>
+              {kindOptions.map((k) => (
+                <button
+                  key={k}
+                  className={filter === k ? "seg-btn active" : "seg-btn"}
+                  onClick={() => setFilter(k)}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {byKind.map((group) => (
+            <section className="mem-group" key={group.kind}>
+              <h3 className="mem-kind">{group.kind}</h3>
+              {groupBySubject(group.rows).map((sub, i) => (
+                <div className="mem-subject-block" key={`${sub.subject}-${i}`}>
+                  {sub.subject ? (
+                    <p className="mono mem-subject">{sub.subject}</p>
+                  ) : (
+                    <p className="mem-subject faint">no subject</p>
+                  )}
+                  <div className="mem-rows">
+                    {sub.rows.map((row) => (
+                      <Row
+                        key={row.id}
+                        row={row}
+                        kinds={kindOptions}
+                        onSaved={() => void load(filter)}
+                        onForgotten={() => void load(filter)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          ))}
+
+          {loaded && rows.length === 0 && !error && (
+            <p className="muted mem-empty">
+              {filter
+                ? `Nothing remembered under ${filter} yet.`
+                : "Nothing remembered yet. The brain keeps what you tell it that should outlast one " +
+                  "conversation — who someone is, what a project is for, how you like answers " +
+                  "written — and this is where you read it back and fix anything it got wrong. " +
+                  "The agent writes here too, whenever you tell it something durable in chat."}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

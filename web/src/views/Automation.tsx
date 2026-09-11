@@ -9,17 +9,22 @@ import JobsPanel from "../components/JobsPanel";
 export default function Automation({ active }: { active: boolean }) {
   return (
     <div className="automation-view">
-      <div className="wrap auto-wrap">
-        <div className="auto-head">
-          <h2>Automation</h2>
-          <p className="auto-lead">
-            What the brain does without being asked. Rules file notes where they belong;
-            jobs decide how often anything runs.
-          </p>
+      <header className="view-band">
+        <div className="wrap auto-wrap">
+          <div className="auto-head">
+            <h2>Automation</h2>
+            <p className="auto-lead">
+              What the brain does without being asked. Rules file notes where
+              they belong; jobs decide how often anything runs.
+            </p>
+          </div>
         </div>
-
-        <RulesPanel active={active} />
-        <JobsPanel active={active} />
+      </header>
+      <div className="view-scroll">
+        <div className="wrap auto-wrap">
+          <RulesPanel active={active} />
+          <JobsPanel active={active} />
+        </div>
       </div>
     </div>
   );
