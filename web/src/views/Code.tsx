@@ -1,3 +1,4 @@
+import { Pager } from "../components/Pager";
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import { wsSubscribe } from "../ws";
@@ -264,6 +265,10 @@ export default function Code({
   const [repos, setRepos] = useState<RepoList | null>(null);
   const [jobs, setJobs] = useState<JobList>(NO_JOBS);
   const [reviews, setReviews] = useState<Review[]>([]);
+  // One note per review run and nothing prunes them, so this only grows.
+  const REVIEW_PAGE = 25;
+  const [reviewOffset, setReviewOffset] = useState(0);
+  const [reviewTotal, setReviewTotal] = useState(0);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncResults, setSyncResults] = useState<Record<string, RepoSync>>({});
   const [running, setRunning] = useState<string | null>(null);
@@ -289,11 +294,22 @@ export default function Code({
         setError(e instanceof Error ? e.message : "failed to load reviews"),
       );
   }, [isAdmin]);
-  const loadReviews = useCallback(() => {
-    apiGet<{ reviews: Review[] }>("/api/reviews")
-      .then((r) => setReviews(r.reviews ?? []))
+  const loadReviews = useCallback((from = 0) => {
+    const q = new URLSearchParams({
+      limit: String(REVIEW_PAGE),
+      offset: String(from),
+    });
+    apiGet<{ reviews: Review[]; total?: number }>(`/api/reviews?${q}`)
+      .then((r) => {
+        setReviews(r.reviews ?? []);
+        setReviewTotal(r.total ?? (r.reviews ?? []).length);
+      })
       .catch(() => setReviews([]));
   }, []);
+
+  useEffect(() => {
+    loadReviews(reviewOffset);
+  }, [reviewOffset, loadReviews]);
   const loadAll = useCallback(() => {
     loadRepos();
     loadJobs();
@@ -643,6 +659,13 @@ export default function Code({
                       </p>
                     </div>
                   ))}
+                  <Pager
+                    total={reviewTotal}
+                    limit={REVIEW_PAGE}
+                    offset={reviewOffset}
+                    onOffset={setReviewOffset}
+                    noun="review"
+                  />
                 </div>
               )}
             </section>

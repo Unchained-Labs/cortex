@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import type { Memory as MemoryRow, MemoryList } from "../types";
+import { Pager } from "../components/Pager";
 import IdentityReadout from "../components/IdentityReadout";
 
 /** `2026-08-21T16:04:46+00:00` → `21 Aug`. Enough to date a belief. */
@@ -191,14 +192,23 @@ export default function Memory({
   const [subject, setSubject] = useState("");
   const [busy, setBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  // A page, not the whole set. 25 is what fits the frame without the list
+  // becoming the page — see components/Pager.
+  const PAGE = 25;
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
 
-  const load = useCallback(async (which: string) => {
+  const load = useCallback(async (which: string, from = 0) => {
     try {
-      const r = await apiGet<MemoryList>(
-        `/api/memory${which ? `?kind=${encodeURIComponent(which)}` : ""}`,
-      );
+      const q = new URLSearchParams({
+        limit: String(PAGE),
+        offset: String(from),
+      });
+      if (which) q.set("kind", which);
+      const r = await apiGet<MemoryList>(`/api/memory?${q}`);
       setKinds(r.kinds ?? []);
       setRows(r.memories ?? []);
+      setTotal(r.total ?? (r.memories ?? []).length);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to load memory");
@@ -208,8 +218,14 @@ export default function Memory({
   }, []);
 
   useEffect(() => {
-    if (active) void load(filter);
-  }, [active, filter, load]);
+    if (active) void load(filter, offset);
+  }, [active, filter, offset, load]);
+
+  // Changing the filter must return to page one. Staying on page 4 of a set
+  // that now has two pages shows an empty list and looks like a broken filter.
+  useEffect(() => {
+    setOffset(0);
+  }, [filter]);
 
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -361,8 +377,8 @@ export default function Memory({
                         key={row.id}
                         row={row}
                         kinds={kindOptions}
-                        onSaved={() => void load(filter)}
-                        onForgotten={() => void load(filter)}
+                        onSaved={() => void load(filter, offset)}
+                        onForgotten={() => void load(filter, offset)}
                       />
                     ))}
                   </div>
@@ -370,6 +386,15 @@ export default function Memory({
               ))}
             </section>
           ))}
+
+          <Pager
+            total={total}
+            limit={PAGE}
+            offset={offset}
+            onOffset={setOffset}
+            noun="memory"
+            plural="memories"
+          />
 
           {loaded && rows.length === 0 && !error && (
             <p className="muted mem-empty">

@@ -1923,3 +1923,28 @@ select { cursor: pointer; }
   overflow-y: auto;
   padding: var(--ul-space-6) 0 var(--ul-space-8);
 }
+
+/* ---- pager ---------------------------------------------------------------
+ *
+ * A page of a long list beats scrolling it for one reason: it can say where it
+ * ends. Memory rendered 200 rows as a 21,000px column inside an 839px box —
+ * you could scroll for a minute without learning whether you were near the end,
+ * and the 200 was a silent cap, so the end you eventually reached was not the
+ * end of anything.
+ *
+ * Sticks to the bottom of its scroller so the controls do not themselves
+ * require scrolling to reach, which would be the same joke told twice. */
+.pager {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ul-space-4);
+  padding: var(--ul-space-3) 0;
+  margin-top: var(--ul-space-4);
+  background: var(--ul-bg);
+  border-top: 1px solid var(--ul-line);
+}
+.pager-at { font-size: var(--ul-text-sm); color: var(--ul-muted); }
+.pager .btn[disabled] { opacity: .4; cursor: default; }

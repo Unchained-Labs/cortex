@@ -30,7 +30,13 @@ export type ChatFrame =
   | { type: "thread"; thread: string }
   | { type: "token"; text: string }
   | { type: "tool_start"; name: string; arguments: unknown }
-  | { type: "tool_end"; name: string; ok: boolean; latency_ms: number; preview: string }
+  | {
+      type: "tool_end";
+      name: string;
+      ok: boolean;
+      latency_ms: number;
+      preview: string;
+    }
   | { type: "notice"; text: string }
   | { type: "error"; text: string }
   | { type: "done"; text: string };
@@ -181,6 +187,12 @@ export interface Memory {
 export interface MemoryList {
   kinds: string[];
   memories: Memory[];
+  /** Rows matching the filter, ignoring the page. Optional so an older server
+   *  still renders — the client falls back to the page length, which makes the
+   *  pager hide itself rather than claim a total it does not have. */
+  total?: number;
+  limit?: number;
+  offset?: number;
 }
 
 /**
@@ -481,7 +493,12 @@ export interface JobRun {
 
 export type WsEvent =
   | { type: "channel_message"; channel_id: string; message: ChannelMessage }
-  | { type: "agent_partial"; channel_id: string; message_id: string; text: string }
+  | {
+      type: "agent_partial";
+      channel_id: string;
+      message_id: string;
+      text: string;
+    }
   | { type: "vault_changed"; vault: string; path: string }
   | { type: "index_done"; stats: Record<string, number> }
   | { type: "repo_synced"; repo: string; status: string; head?: string };

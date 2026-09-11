@@ -425,19 +425,52 @@ class Store:
         "WHEN 'preference' THEN 2 WHEN 'goal' THEN 3 ELSE 4 END"
     )
 
-    def facts_by_kind(self, kind: str = "", limit: int = 200) -> list[sqlite3.Row]:
+    def facts_by_kind(self, kind: str = "", limit: int = 200,
+                      offset: int = 0) -> list[sqlite3.Row]:
+        """One page of remembered facts.
+
+        `limit` used to be the whole story, and the default of 200 was a silent
+        truncation rather than a page: you got the first two hundred, there was
+        no way to ask for the rest, and nothing said a rest existed. A cap that
+        hides its own existence is worse than no cap — it reads as "this is
+        everything the brain knows about you", which is exactly the claim this
+        page must not make falsely.
+
+        With an offset it is a page, and `facts_count` says how many pages there
+        are. The two travel together for that reason.
+        """
         if kind:
             return self.db.execute(
                 "SELECT id, body, source, created_at, kind, subject FROM facts "
                 f"WHERE retired=0 AND kind=? ORDER BY {self._KIND_ORDER}, subject, id DESC "
-                "LIMIT ?",
-                (kind, limit),
+                "LIMIT ? OFFSET ?",
+                (kind, limit, offset),
             ).fetchall()
         return self.db.execute(
             "SELECT id, body, source, created_at, kind, subject FROM facts "
-            f"WHERE retired=0 ORDER BY {self._KIND_ORDER}, subject, id DESC LIMIT ?",
-            (limit,),
+            f"WHERE retired=0 ORDER BY {self._KIND_ORDER}, subject, id DESC "
+            "LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
+
+    def facts_count(self, kind: str = "") -> int:
+        """How many facts the filter matches, ignoring the page.
+
+        Separate query rather than a window function: the ordering above uses a
+        CASE expression for kind priority, and counting through it would make
+        this depend on that expression staying correct for a job it is not
+        doing.
+        """
+        if kind:
+            row = self.db.execute(
+                "SELECT COUNT(*) AS n FROM facts WHERE retired=0 AND kind=?",
+                (kind,),
+            ).fetchone()
+        else:
+            row = self.db.execute(
+                "SELECT COUNT(*) AS n FROM facts WHERE retired=0"
+            ).fetchone()
+        return int(row["n"]) if row else 0
 
     def facts_about(self, subject: str, limit: int = 50) -> list[sqlite3.Row]:
         """Everything known about one subject, matched loosely — people are
