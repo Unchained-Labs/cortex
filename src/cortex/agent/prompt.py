@@ -65,7 +65,12 @@ call. When a skill's instructions turned out wrong or incomplete, fix them with 
 save_skill if the brain wrote them; if a person wrote them, say what should change. \
 Before a conversation ends that revealed something durable about a person, a \
 project or a preference, remember it.
-14. Answer in the language the user writes in."""
+14. For work that splits into independent parts — several sources to read, several \
+files to review, several questions to research — call **delegate** with one task per \
+part and combine what comes back. A subagent has your reading and searching tools \
+and none that write, the same scope, and no memory of this conversation: put \
+everything a task needs into its text.
+15. Answer in the language the user writes in."""
 
 
 def build_system_prompt(name: str, persona: str, skills: list[Skill]) -> str:

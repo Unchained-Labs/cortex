@@ -123,6 +123,18 @@ The index rebuilds from scratch when the chunk schema *or* embedding model
 changes, because silently mixing vector spaces is corruption. No embedding
 endpoint means full-text search that says so, not fake vector scores.
 
+### Subagents
+
+Five sources to read, four files to review, three questions to research:
+one agent doing them in sequence fills its context with the first before
+it reaches the last. `delegate` hands each part to a subagent that runs at
+the same time (up to four per call, three at once, a shorter loop than the
+parent's) and reports back; the parent sees one answer per task and
+decides what to keep. Children read and search with the parent's tools
+and the parent's scope, and cannot write, remember or delegate — what
+gets kept is decided in front of the person. The deep-research skill fans
+its queries out this way. The shape is Hermes Agent's `delegate_task`.
+
 ### The graph
 
 Search finds the passage that matches the words. It does not know that the
