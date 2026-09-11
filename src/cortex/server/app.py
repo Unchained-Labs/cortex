@@ -938,17 +938,34 @@ def build_app(brain: Brain) -> FastAPI:
     # remembers nothing, so none of this is admin-only.
 
     @app.get("/api/memory")
-    def list_memory(user: dict = Depends(current_user), kind: str = "") -> dict:
+    def list_memory(user: dict = Depends(current_user), kind: str = "",
+                    limit: int = 25, offset: int = 0) -> dict:
+        """One page of memory, with the total so the page can say which one.
+
+        This used to return everything `facts_by_kind` would give — which was a
+        silently capped 200 — and the client rendered all of it. On this box
+        that was a 21,000px column inside an 839px box: an endless scroll with
+        no way to tell how far in you were, and a cap you could not see.
+
+        `total` is not decoration. Without it the client can show "next" but
+        never "of 8", and a pager that cannot say where it ends is a scrollbar
+        with extra clicks.
+        """
         from cortex.memory import facts as factsmod
 
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
         try:
-            rows = brain.store.facts_by_kind(
-                factsmod.normalise_kind(kind) if kind else ""
-            )
+            normalised = factsmod.normalise_kind(kind) if kind else ""
+            rows = brain.store.facts_by_kind(normalised, limit=limit, offset=offset)
+            total = brain.store.facts_count(normalised)
         except factsmod.MemoryError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
             "kinds": list(factsmod.KINDS),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
             "memories": [
                 {
                     "id": r["id"],
@@ -1751,10 +1768,29 @@ def build_app(brain: Brain) -> FastAPI:
         return {"ok": True, "jobs_removed": removed}
 
     @app.get("/api/reviews")
-    def reviews_list(user: dict = Depends(current_user), repo: str = "") -> dict:
+    def reviews_list(user: dict = Depends(current_user), repo: str = "",
+                     limit: int = 25, offset: int = 0) -> dict:
         """What the brain has written about the code, newest first. The
-        review notes live in the shared vault, so any member may read them."""
-        return {"reviews": codemod.list_reviews(brain.config, repo=repo)}
+        review notes live in the shared vault, so any member may read them.
+
+        Paged, because this set only ever grows: one note per review run, and
+        nothing prunes them. Unpaged it was the Code tab rendering every review
+        ever written into a single column — the same shape Memory had, just
+        earlier in its life.
+
+        Sliced here rather than in `list_reviews`: that function reads the vault
+        directory, and the total is the honest count of what is there. Pushing
+        the limit down would make the count depend on the page.
+        """
+        rows = codemod.list_reviews(brain.config, repo=repo)
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        return {
+            "reviews": rows[offset:offset + limit],
+            "total": len(rows),
+            "limit": limit,
+            "offset": offset,
+        }
 
     # -- admin ------------------------------------------------------------
 
