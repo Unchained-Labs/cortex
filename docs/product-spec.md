@@ -438,6 +438,15 @@ through `langchain-mcp-adapters`. Local tools remain `ToolPlugin`s, adapted to
 LangChain `StructuredTool`s. Usage lands in `.cortex/usage.jsonl` via a callback
 (prompt_tokens/completion_tokens when reported; absent stays absent).
 
+Subagents (`agent/delegate.py`): `delegate(tasks, context)` runs each task as a child
+ReAct agent (fresh conversation, no checkpointer, `recursion_limit` 24) with the
+parent's registry minus `BLOCKED` (everything that writes, plus `delegate` itself),
+at most 4 tasks per call and 3 at once, and returns one answer per task in order,
+a failure reported in its place. The tool body runs on the registry's worker thread
+and owns its own event loop, so each child gets a fresh model client
+(`Brain.fresh_chat_model`); the caller's scope ContextVars travel into the children.
+The parent's event stream shows one `delegate` tool call, not the children's.
+
 The graph (`memory/graph.py`): a structural graph over everything indexed, rebuilt
 whole whenever the index changes and stored beside it (`graph_nodes`, `graph_edges`).
 Nodes are files, directories, tags, symbols, packages and commits; edges are `links`,

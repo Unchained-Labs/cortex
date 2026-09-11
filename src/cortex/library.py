@@ -138,11 +138,13 @@ For a question that deserves more than a quick answer:
    If it is ambiguous, ask one clarifying question before spending effort.
 2. Check the brain first — search_brain, recall, transcript_search — so you
    build on what is already known and do not redo settled work.
-3. Search the web in rounds, not in one go: 3-5 distinct queries phrased
-   differently (the thing, its alternatives, its problems, "<thing> vs"),
-   then fetch_url the results that look primary — official docs, papers,
-   the author's own words — over aggregators. Follow the best sources one
-   hop further when they point somewhere.
+3. Fan out: write 3-5 distinct queries phrased differently (the thing, its
+   alternatives, its problems, "<thing> vs") and call delegate with one
+   task per query. Each task says: search the web for <query>, fetch_url
+   the results that look primary — official docs, papers, the author's own
+   words — over aggregators, follow the best one hop further, and report
+   the facts found with the URL each came from. Read what comes back as
+   evidence, not as an answer.
 4. Cross-check every claim you intend to keep against a second source. Note
    where sources disagree and say which you trust and why; note what you
    could not verify rather than dropping it silently.

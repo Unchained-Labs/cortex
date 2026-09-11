@@ -21,6 +21,7 @@ from cortex.obs import Obs
 from cortex.plugins import ToolRegistry
 from cortex.plugins.builtin import register_builtin
 from cortex.plugins.code_tools import register_code_tools
+from cortex.plugins.delegate_tools import register_delegate_tools
 from cortex.plugins.graph_tools import register_graph_tools
 from cortex.plugins.learning import register_learning_tools
 from cortex.plugins.skills import load_skills, register_skill_tool
@@ -60,6 +61,7 @@ class Brain:
         register_web_tools(registry, self)
         register_graph_tools(registry, self)
         register_learning_tools(registry, self)
+        register_delegate_tools(registry, self)
         register_skill_tool(registry, self.skills, on_use=self.store.bump_skill_use)
         registry.load_directory(
             self.config.plugins_dir, skip=self.store.disabled_names("plugin")
@@ -119,6 +121,16 @@ class Brain:
                 )
             self._chat_model = chat_model(profile)
         return self._chat_model
+
+    def fresh_chat_model(self) -> BaseChatModel:
+        """A model client of its own, for a subagent running on another
+        loop; the cached one belongs to the loop that made it."""
+        profile = self.config.provider_for("chat")
+        if profile is None:
+            raise ProviderError(
+                "no chat provider configured; add a providers: block to cortex.yaml"
+            )
+        return chat_model(profile)
 
     def chat_model_name(self) -> str:
         profile = self.config.provider_for("chat")
