@@ -56,7 +56,9 @@ calendar connector expands no recurrence rules yet.
   garden.md`).
 - **Chat** — private threads with the agent. It searches before it answers,
   streams its tool calls (⚙ `search_brain` … ✓ 33ms), and cites files by
-  path; clicking a citation opens it in the vault view.
+  path; clicking a citation opens it in the vault view. It also remembers
+  what you discussed: "as we said last week" makes it search your past
+  conversations, and the sidebar searches them too.
 - **Channels** — peer chat for the people on the brain. Mention `@cortex` and
   the agent answers in-channel, reading only the shared vault — never
   anyone's personal vault.

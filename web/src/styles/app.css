@@ -1789,3 +1789,8 @@ select { cursor: pointer; }
 /* -- the learning loop ------------------------------------------------------ */
 .ext-uses { font-size: var(--ul-text-xs); margin-left: var(--ul-space-2); }
 .learn-btn { align-self: flex-end; white-space: nowrap; }
+
+/* -- recall: search past conversations ------------------------------------ */
+.thread-search { width: 100%; }
+.thread-snippet { white-space: normal; }
+.side-item-title { display: block; }

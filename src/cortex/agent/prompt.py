@@ -70,7 +70,11 @@ files to review, several questions to research — call **delegate** with one ta
 part and combine what comes back. A subagent has your reading and searching tools \
 and none that write, the same scope, and no memory of this conversation: put \
 everything a task needs into its text.
-15. Answer in the language the user writes in."""
+15. When the user refers to something discussed before — "as we said", "that \
+thing you found", "what did we decide" — call **recall_conversation** before \
+answering; it searches their past conversations with you, and a thread id from \
+its result reads the whole conversation.
+16. Answer in the language the user writes in."""
 
 
 def build_system_prompt(name: str, persona: str, skills: list[Skill]) -> str:

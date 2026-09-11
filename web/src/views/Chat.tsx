@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet } from "../api";
 import { chatStream } from "../sse";
-import type { ThreadMeta, HistoryMessage, Digest, BrainInfo } from "../types";
+import type { ThreadMeta, ThreadHit, HistoryMessage, Digest, BrainInfo } from "../types";
 import Markdown from "../components/Markdown";
 
 interface ToolLine {
@@ -68,6 +68,8 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [stream, setStream] = useState<StreamState | null>(null);
   const [input, setInput] = useState("");
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<ThreadHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const threadRef = useRef<string | null>(null);
@@ -104,6 +106,30 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
       setError(e instanceof Error ? e.message : "failed to load thread");
     }
   };
+
+  // Search past conversations: the sidebar shows matching threads with the
+  // line that matched while the box has text, the plain list otherwise.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setHits(null);
+      return;
+    }
+    let live = true;
+    const handle = window.setTimeout(() => {
+      apiGet<{ hits: ThreadHit[] }>(`/api/threads/search?q=${encodeURIComponent(q)}`)
+        .then((r) => {
+          if (live) setHits(r.hits);
+        })
+        .catch(() => {
+          if (live) setHits([]);
+        });
+    }, 200);
+    return () => {
+      live = false;
+      window.clearTimeout(handle);
+    };
+  }, [query]);
 
   const newThread = () => {
     if (stream) return;
@@ -254,8 +280,35 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
             + New
           </button>
         </div>
+        <div className="side-sub">
+          <input
+            className="mono thread-search"
+            type="search"
+            aria-label="Search past conversations"
+            placeholder="Search past conversations"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         <div className="side-list">
-          {threads.map((t) => (
+          {hits !== null && hits.length === 0 && (
+            <p className="side-empty muted">No past conversation mentions that.</p>
+          )}
+          {hits?.map((h) => (
+            <button
+              key={h.thread}
+              className={h.thread === thread ? "side-item active" : "side-item"}
+              onClick={() => void openThread(h.thread)}
+              title={h.title || h.thread}
+            >
+              <span className="side-item-title">{h.title || h.thread}</span>
+              <span className="side-item-sub thread-snippet">
+                {h.role === "user" ? "you: " : "cortex: "}
+                {h.snippet}
+              </span>
+            </button>
+          ))}
+          {hits === null && threads.map((t) => (
             <button
               key={t.thread}
               className={t.thread === thread ? "side-item active" : "side-item"}
