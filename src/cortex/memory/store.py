@@ -88,6 +88,15 @@ CREATE TABLE IF NOT EXISTS messages(
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread, id);
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    body, content='messages', content_rowid='id', tokenize='unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, body) VALUES (new.id, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, body) VALUES ('delete', old.id, old.body);
+END;
 CREATE TABLE IF NOT EXISTS threads(
     thread TEXT PRIMARY KEY, owner TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
@@ -228,6 +237,13 @@ class Store:
                 "ALTER TABLE facts ADD COLUMN subject TEXT NOT NULL DEFAULT ''"
             )
         self.db.execute("CREATE INDEX IF NOT EXISTS facts_kind ON facts(kind, retired)")
+        # Conversations written before recall existed are indexed once; the
+        # triggers keep the index current from then on.
+        if self.meta_get("messages_fts_built") is None:
+            self.db.execute("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
+            self.db.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES('messages_fts_built', '1')"
+            )
 
     def close(self) -> None:
         self.db.close()
@@ -457,6 +473,26 @@ class Store:
                 "INSERT INTO messages(thread, role, body, created_at) VALUES(?,?,?,?)",
                 (thread, role, body, _now()),
             )
+
+    def search_messages(
+        self, query: str, owner: str | None, limit: int = 40
+    ) -> list[sqlite3.Row]:
+        """Lines of past conversations that match, best first, with the
+        thread they belong to. ``owner`` None means every thread (the box
+        owner); a username means that person's threads only."""
+        q = fts_query(query)
+        if not q:
+            return []
+        clause, params = ("", ()) if owner is None else (" AND t.owner=?", (owner,))
+        return self.db.execute(
+            "SELECT m.id, m.thread, m.role, m.created_at, t.title, "
+            "snippet(messages_fts, 0, '', '', '…', 18) AS snippet, "
+            "bm25(messages_fts) AS rank "
+            "FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
+            "JOIN threads t ON t.thread = m.thread "
+            f"WHERE messages_fts MATCH ?{clause} ORDER BY rank LIMIT ?",
+            (q, *params, limit),
+        ).fetchall()
 
     def history(self, thread: str, limit: int = 40) -> list[sqlite3.Row]:
         rows = self.db.execute(

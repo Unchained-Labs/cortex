@@ -22,6 +22,7 @@ from cortex.plugins import ToolRegistry
 from cortex.plugins.builtin import register_builtin
 from cortex.plugins.code_tools import register_code_tools
 from cortex.plugins.graph_tools import register_graph_tools
+from cortex.plugins.recall import register_recall_tools
 from cortex.plugins.skills import load_skills, register_skill_tool
 from cortex.plugins.web import register_web_tools
 from cortex.providers import Embedder, ProviderError, chat_model
@@ -57,6 +58,7 @@ class Brain:
         register_code_tools(registry, self)
         register_web_tools(registry, self)
         register_graph_tools(registry, self)
+        register_recall_tools(registry, self)
         register_skill_tool(registry, self.skills)
         registry.load_directory(
             self.config.plugins_dir, skip=self.store.disabled_names("plugin")

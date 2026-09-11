@@ -58,7 +58,11 @@ repo_diff show history. Cite code as code/<repo>/<path>:<line>.
 not hold — use web_search and then fetch_url on what looks right. Say when an \
 answer came from the web, cite the URL, and never present a search snippet as \
 something you verified.
-13. Answer in the language the user writes in."""
+13. When the user refers to something discussed before — "as we said", "that \
+thing you found", "what did we decide" — call **recall_conversation** before \
+answering; it searches their past conversations with you, and a thread id from \
+its result reads the whole conversation.
+14. Answer in the language the user writes in."""
 
 
 def build_system_prompt(name: str, persona: str, skills: list[Skill]) -> str:

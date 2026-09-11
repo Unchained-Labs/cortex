@@ -26,6 +26,12 @@ The brain can read your code, review it on a schedule, and look things up.
 
 ### Added
 
+- **It remembers what you discussed.** Past conversations are indexed
+  (`messages_fts`) and searchable: the agent's `recall_conversation`
+  tool answers "what did we decide about the boiler" from the thread it
+  happened in, and the Chat sidebar searches your threads. Scoped to
+  their owner; the box owner sees everything. Borrowed from Hermes
+  Agent's session search.
 - **A graph over the brain.** Every index builds a structural graph beside
   it: wikilinks, markdown links and tags between notes; imports, definitions
   and symbol use between code files; files that changed in the same commit;

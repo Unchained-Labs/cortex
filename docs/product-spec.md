@@ -49,6 +49,12 @@ All responses JSON unless stated. Errors: `{"detail": str}` with 4xx/5xx.
   default. 422 on empty text, 404 for a vault the caller may not write.
 
 ### Search
+- `GET /api/threads/search?q=` → `{hits: [{thread, title, role, snippet, at}]}` — the
+  caller's own past conversations that mention something, one row per thread, best
+  line first. Backed by `messages_fts` (FTS5 over `messages`, kept current by triggers,
+  built once for a database from before it existed). The agent's
+  `recall_conversation(query, thread)` tool reads the same index under the same owner
+  filter; the box owner (no scope) sees every thread.
 - `GET /api/search?q=` → `{used_vectors, hits: [{path, score, via, passages: [{heading,
   text, start_line}]}]}` — scoped to the caller (shared + own vault + sources + code).
   After the direct hits come up to five graph neighbours of the best ones (a note a

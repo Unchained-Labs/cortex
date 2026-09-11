@@ -1785,3 +1785,8 @@ select { cursor: pointer; }
 @media (max-width: 640px) {
   .conn-group { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* -- recall: search past conversations ------------------------------------ */
+.thread-search { width: 100%; }
+.thread-snippet { white-space: normal; }
+.side-item-title { display: block; }

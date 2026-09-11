@@ -982,6 +982,24 @@ def build_app(brain: Brain) -> FastAPI:
             ]
         }
 
+    @app.get("/api/threads/search")
+    def threads_search(q: str, user: dict = Depends(current_user)) -> dict:
+        """Past conversations that mention something: one row per thread,
+        best line first, only the caller's own."""
+        rows = brain.store.search_messages(q, user["username"], limit=60)
+        seen: dict[str, dict] = {}
+        for r in rows:
+            if r["thread"] in seen:
+                continue
+            seen[r["thread"]] = {
+                "thread": r["thread"],
+                "title": r["title"],
+                "role": r["role"],
+                "snippet": r["snippet"],
+                "at": r["created_at"],
+            }
+        return {"hits": list(seen.values())[:20]}
+
     @app.get("/api/history")
     def history(thread: str, user: dict = Depends(current_user)) -> dict:
         owner = brain.store.thread_owner(thread)

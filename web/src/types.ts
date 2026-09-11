@@ -11,6 +11,15 @@ export interface ThreadMeta {
   updated_at: string;
 }
 
+/** `GET /api/threads/search?q=` — one row per past conversation that mentions it. */
+export interface ThreadHit {
+  thread: string;
+  title: string;
+  role: "user" | "assistant";
+  snippet: string;
+  at: string;
+}
+
 export interface HistoryMessage {
   role: string;
   body: string;
