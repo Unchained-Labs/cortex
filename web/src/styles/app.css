@@ -1794,3 +1794,69 @@ select { cursor: pointer; }
 .thread-search { width: 100%; }
 .thread-snippet { white-space: normal; }
 .side-item-title { display: block; }
+
+/* ---- scrollbars ----------------------------------------------------------
+ *
+ * Every scrolling box in this app used to draw the operating system's default
+ * bar: a light-grey slab on Midnight Navy in dark mode, wide enough to shift
+ * the layout by ~15px the moment content grew past its box. Fourteen scrollers,
+ * fourteen chances for that.
+ *
+ * Three decisions.
+ *
+ * TOKENS, NOT COLOURS. There is a light theme, so a hardcoded thumb would be
+ * invisible in one of the two. The thumb is --ul-line-strong, which is already
+ * defined as "borders that must survive a busy background" in both ramps — the
+ * exact job a scrollbar thumb is doing.
+ *
+ * OVERLAY, NOT GUTTER. The track is transparent and the thumb is inset with a
+ * transparent border, so the bar reads as floating over the content rather than
+ * as a channel cut beside it.
+ *
+ * THE ACCENT IS FOR THE HAND, NOT THE EYE. The thumb only goes Chain Teal on
+ * hover and drag. A permanently teal scrollbar competes with every real accent
+ * on the page — the brand colour means "this is the thing", and a scrollbar is
+ * never the thing.
+ *
+ * The global selector is deliberate: a utility class would have to be remembered
+ * on every new scroller, and the one that gets forgotten is the one that looks
+ * broken. Anything that genuinely wants no bar opts out with a more specific
+ * selector, as the tab strip already does. */
+* {
+  scrollbar-width: thin;                                  /* Firefox */
+  scrollbar-color: var(--ul-line-strong) transparent;
+}
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background-color: var(--ul-line-strong);
+  border-radius: 999px;
+  /* Border in the track's colour rather than padding: it is the only way to
+   * inset a webkit thumb, and transparent works because the track is too. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ul-accent-dim);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:active { background-color: var(--ul-accent); background-clip: padding-box; }
+/* Where a vertical and a horizontal bar meet. Left unstyled it is an opaque
+ * light square in the corner of every two-axis scroller. */
+*::-webkit-scrollbar-corner { background: transparent; }
+
+/* Hovering the scroller — not just the thumb — brightens the bar, so a long
+ * list tells you it is scrollable while your pointer is anywhere over it. */
+:hover > ::-webkit-scrollbar-thumb { background-color: var(--ul-line-strong); }
+
+/* A pane whose content is plain blocks rather than its own scroller.
+ *
+ * .pane is a flex column with min-height:0 and no overflow, which is correct for
+ * the panes that contain one — chat has .msg-scroll, the editor has .editor-host.
+ * A pane that just stacks sections had nothing to scroll in, so its overflow
+ * escaped into `body { overflow: hidden }` and was simply unreachable: the page
+ * fit the viewport exactly as intended, and the bottom of the content did not
+ * exist. Opt in per pane rather than putting overflow on .pane itself, which
+ * would give the panes that DO scroll a second, nested scrollbar. */
+.settings-pane, .admin-pane { overflow-y: auto; }
