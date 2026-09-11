@@ -26,6 +26,12 @@ The brain can read your code, review it on a schedule, and look things up.
 
 ### Added
 
+- **Subagents.** `delegate` hands independent parts of a job — sources
+  to read, files to review, questions to research — to up to four
+  subagents that run at the same time and report back one answer each.
+  Children get the parent's reading and searching tools and scope, and
+  none that write; the deep-research skill fans its queries out this
+  way. The shape is Hermes Agent's `delegate_task`.
 - **The brain writes its own skills.** After a multi-step job the agent
   can save the procedure with `save_skill`, and fix a skill of its own
   whose instructions let it down. Skills it writes are signed
