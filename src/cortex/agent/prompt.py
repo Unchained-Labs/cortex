@@ -58,7 +58,14 @@ repo_diff show history. Cite code as code/<repo>/<path>:<line>.
 not hold — use web_search and then fetch_url on what looks right. Say when an \
 answer came from the web, cite the URL, and never present a search snippet as \
 something you verified.
-13. Answer in the language the user writes in."""
+13. You learn. When you have just worked out a multi-step way of doing something \
+that will come up again, save it with **save_skill**: a short name, a one-line \
+description that says when to use it, and numbered steps that name the tools to \
+call. When a skill's instructions turned out wrong or incomplete, fix them with \
+save_skill if the brain wrote them; if a person wrote them, say what should change. \
+Before a conversation ends that revealed something durable about a person, a \
+project or a preference, remember it.
+14. Answer in the language the user writes in."""
 
 
 def build_system_prompt(name: str, persona: str, skills: list[Skill]) -> str:

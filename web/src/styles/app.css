@@ -1785,3 +1785,7 @@ select { cursor: pointer; }
 @media (max-width: 640px) {
   .conn-group { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* -- the learning loop ------------------------------------------------------ */
+.ext-uses { font-size: var(--ul-text-xs); margin-left: var(--ul-space-2); }
+.learn-btn { align-self: flex-end; white-space: nowrap; }

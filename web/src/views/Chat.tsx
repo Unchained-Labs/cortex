@@ -55,6 +55,13 @@ function Activity({ lines }: { lines: ActivityLine[] }) {
   );
 }
 
+/** What the "Turn this into a skill" button sends: the brain reads the
+ *  thread it is in and writes the procedure down with save_skill. */
+const LEARN_PROMPT =
+  "Turn what we did in this conversation into a reusable skill: pick a short name, " +
+  "a one-line description of when to use it, and numbered steps that name the tools " +
+  "to call. Save it with save_skill and tell me what it is called.";
+
 export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => void }) {
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
   const [thread, setThread] = useState<string | null>(null);
@@ -336,6 +343,16 @@ export default function Chat({ onVaultPath }: { onVaultPath: (path: string) => v
           <button className="btn primary" onClick={() => void send()} disabled={!input.trim() || !!stream}>
             Send
           </button>
+          {messages.some((m) => m.role === "assistant") && (
+            <button
+              className="btn btn-sm learn-btn"
+              onClick={() => void send(LEARN_PROMPT)}
+              disabled={!!stream}
+              title="Ask the brain to write down what it just did as a skill it can reuse"
+            >
+              Turn this into a skill
+            </button>
+          )}
         </div>
       </section>
     </div>

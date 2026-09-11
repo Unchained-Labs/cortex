@@ -246,6 +246,16 @@ A broken extension is reported and isolated, never fatal. Registration is
 not authorization: a tool that touches something sensitive keeps its own
 checks inside the callable.
 
+**It writes its own skills.** When the agent has just worked out a
+multi-step way of doing something, it saves the procedure with
+`save_skill` so next time is one call, and when a skill's instructions let
+it down it fixes them. The idea comes from Hermes Agent's learning loop;
+the two lines cortex adds are that the brain signs what it writes
+(`author: cortex`, shown as *written by the brain* on the Extend page, with
+how often each skill is used) and never rewrites a skill a person wrote —
+for those it says what should change and the person edits. In Chat,
+**Turn this into a skill** asks it to write down what it just did.
+
 **Manage them from the dashboard.** The admin-only **Extend** panel lists
 every plugin, skill, connector and MCP server with what it provides, its
 load error if it has one, and an enable toggle that never edits your source

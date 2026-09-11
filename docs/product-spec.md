@@ -357,6 +357,22 @@ memory, not just read one. Fold **Import** into the Vault view at the same time 
 a once-a-year vault operation occupying a top-level slot), so the tab count does not
 grow.
 
+### The learning loop
+
+- `save_skill(name, description, instructions)` writes `skills/<name>/SKILL.md` with
+  `author: cortex` in the frontmatter and asks the host to rebuild the agent so the
+  skill is on the shelf next turn (`Brain.request_reload`; the dashboard's reload
+  worker rebuilds once the current turn releases the agent lock). A skill without that
+  author line is a person's: the tool refuses to overwrite it and tells the agent to
+  say what should change instead.
+- `use_skill` counts: `skill_uses(name, uses, last_used)`; `GET /api/extensions` skills
+  carry `author`, `uses`, `last_used`, and the Extend page shows *written by the brain*
+  and *used N×*.
+- The system prompt asks the agent to save a procedure after a multi-step job, to fix
+  a skill of its own that let it down, and to remember anything durable a conversation
+  revealed before it ends. Chat has a **Turn this into a skill** button that sends that
+  request for the open thread.
+
 ### Extend, redesigned (v0.4)
 
 The current page is four flat lists of names under a warning about arbitrary code
