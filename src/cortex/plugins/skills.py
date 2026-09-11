@@ -21,6 +21,8 @@ class Skill:
     name: str
     description: str
     instructions: str
+    #: "cortex" when the brain wrote it from experience; empty for a person's.
+    author: str = ""
 
 
 def parse_skill(text: str) -> Skill | None:
@@ -45,12 +47,14 @@ def parse_skill(text: str) -> Skill | None:
         name=name,
         description=fields.get("description", ""),
         instructions="\n".join(lines[body_start:]).strip(),
+        author=fields.get("author", ""),
     )
 
 
 def render_skill(skill: Skill) -> str:
+    author = f"author: {skill.author}\n" if skill.author else ""
     return (
-        f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n\n"
+        f"---\nname: {skill.name}\ndescription: {skill.description}\n{author}---\n\n"
         f"{skill.instructions}\n"
     )
 
@@ -77,7 +81,10 @@ def skills_prompt(skills: list[Skill]) -> str:
     return "\n".join(lines)
 
 
-def register_skill_tool(registry: ToolRegistry, skills: list[Skill]) -> None:
+def register_skill_tool(registry: ToolRegistry, skills: list[Skill], on_use=None) -> None:
+    """``on_use(name)`` is called each time a skill is fetched, so the shelf
+    can show which procedures earn their place; a failure there never
+    costs the agent the instructions."""
     if not skills:
         return
     index = {s.name: s.instructions for s in skills}
@@ -87,6 +94,11 @@ def register_skill_tool(registry: ToolRegistry, skills: list[Skill]) -> None:
         if instructions is None:
             known = ", ".join(sorted(index)) or "none"
             return f"Unknown skill {name!r}. Known skills: {known}."
+        if on_use is not None:
+            try:
+                on_use(name)
+            except Exception:  # noqa: BLE001 - telemetry never blocks a skill
+                pass
         return instructions
 
     registry.register(

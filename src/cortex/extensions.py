@@ -95,6 +95,10 @@ class ExtensionInfo:
     error: str = ""
     source: str = "dashboard"  # "dashboard" (editable) or "file" (read-only)
     detail: dict[str, Any] = field(default_factory=dict)
+    # skills: who wrote it ("cortex" for the brain's own) and how much it is used
+    author: str = ""
+    uses: int = 0
+    last_used: str = ""
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -205,6 +209,7 @@ def _list_skills(config: BrainConfig, store: Store) -> list[ExtensionInfo]:
     out: list[ExtensionInfo] = []
     if not config.skills_dir.is_dir():
         return out
+    usage = store.skill_uses()
     for skill_md in sorted(config.skills_dir.glob("*/SKILL.md")):
         name = skill_md.parent.name
         info = ExtensionInfo(
@@ -215,6 +220,8 @@ def _list_skills(config: BrainConfig, store: Store) -> list[ExtensionInfo]:
             info.error = "SKILL.md has no frontmatter name"
         else:
             info.description = parsed.description
+            info.author = parsed.author
+        info.uses, info.last_used = usage.get(name, (0, ""))
         out.append(info)
     return out
 
@@ -389,7 +396,9 @@ def write_connector(config: BrainConfig, name: str, code: str) -> None:
     path.write_text(code, encoding="utf-8")
 
 
-def write_skill(config: BrainConfig, name: str, description: str, instructions: str) -> None:
+def write_skill(
+    config: BrainConfig, name: str, description: str, instructions: str, author: str = ""
+) -> None:
     name = validate_name(name)
     from cortex.plugins.skills import Skill
 
@@ -397,10 +406,8 @@ def write_skill(config: BrainConfig, name: str, description: str, instructions: 
         raise ExtensionError("a skill needs instructions")
     path = _skill_path(config, name)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        render_skill(Skill(name=name, description=description, instructions=instructions)),
-        encoding="utf-8",
-    )
+    skill = Skill(name=name, description=description, instructions=instructions, author=author)
+    path.write_text(render_skill(skill), encoding="utf-8")
 
 
 def delete_extension(config: BrainConfig, store: Store, kind: str, name: str) -> None:

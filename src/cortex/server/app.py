@@ -206,6 +206,10 @@ def build_app(brain: Brain) -> FastAPI:
     # tools that write (capture_note, complete_task) ask the brain to
     # re-index; here that means nudging the debounced worker below
     brain._reindex_hook = reindex_wanted.set
+    # save_skill asks for the agent to be rebuilt so the new skill is on the
+    # shelf; the worker below does it once the current turn has let go.
+    reload_wanted = asyncio.Event()
+    brain._reload_hook = reload_wanted.set
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -214,6 +218,7 @@ def build_app(brain: Brain) -> FastAPI:
         await runtime.__aenter__()
         state["runtime"] = runtime
         worker = asyncio.create_task(_reindex_worker())
+        reloader = asyncio.create_task(_reload_worker())
         # A brain indexed before the graph existed has files and no graph;
         # one pass at startup builds it, and a fresh brain has nothing to do.
         if brain.store.stats()["files"] and not brain.store.graph_stats()["graph_nodes"]:
@@ -225,6 +230,7 @@ def build_app(brain: Brain) -> FastAPI:
             yield
         finally:
             worker.cancel()
+            reloader.cancel()
             schedule.cancel()
             clock.cancel()
             repos.cancel()
@@ -258,6 +264,15 @@ def build_app(brain: Brain) -> FastAPI:
                 await ws_manager.broadcast(
                     {"type": "index_done", "stats": brain.store.stats()}
                 )
+
+    async def _reload_worker() -> None:
+        while True:
+            await reload_wanted.wait()
+            reload_wanted.clear()
+            try:
+                await _reload_agent()
+            except Exception:  # noqa: BLE001 - a failed reload keeps the old agent
+                pass
 
     def _load_rules() -> list:
         out = []
