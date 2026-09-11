@@ -195,6 +195,27 @@ class WsManager:
 # -- app --------------------------------------------------------------------
 
 
+class _ImmutableStatic(StaticFiles):
+    """Static files whose URL already identifies their contents.
+
+    Everything Vite emits under /app carries a content hash in its filename, so
+    a given URL can never mean two different things. That is exactly the
+    condition `immutable` describes: the browser may keep it for a year and
+    never revalidate, and a changed file arrives as a different URL rather than
+    as a cache miss on the same one.
+
+    Paired with the no-cache on index.html, not independent of it. Long-lived
+    assets are only safe because the map to them is always fresh; caching both
+    is how a deploy silently fails to reach anyone, and caching neither is how
+    every page load re-downloads a megabyte of fonts.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+
+
 def build_app(brain: Brain) -> FastAPI:
     secret = auth.load_secret(brain.config.state_dir)
     ws_manager = WsManager()
@@ -1826,12 +1847,37 @@ def build_app(brain: Brain) -> FastAPI:
 
     webdist = _webdist_dir()
     if webdist is not None and (webdist / "app").is_dir():
-        app.mount("/app", StaticFiles(directory=webdist / "app"), name="app")
+        # Vite fingerprints every file under /app, so the NAME changes whenever
+        # the bytes do. That makes them safe to cache forever, and caching them
+        # forever is the whole point of paying for the fingerprint.
+        app.mount(
+            "/app",
+            _ImmutableStatic(directory=webdist / "app"),
+            name="app",
+        )
 
     @app.get("/", response_class=HTMLResponse)
     def index():  # no-auth: static shell; every data route checks the session
         if webdist is not None and (webdist / "index.html").is_file():
-            return FileResponse(webdist / "index.html")
+            # index.html must NOT be cached, and this is not a preference.
+            #
+            # It is the only unfingerprinted file we serve, and it is the map to
+            # every fingerprinted one. Served without any validator — no
+            # Cache-Control, no ETag, no Last-Modified — a browser is entitled
+            # to apply heuristic freshness and reuse it without asking. It then
+            # keeps loading the OLD hashed CSS and JS, because that is what its
+            # stale copy points at.
+            #
+            # The failure mode is the expensive part: the deploy succeeds, the
+            # server has the new files, the new files are even reachable by
+            # URL — and the user sees the previous release with no way to tell
+            # that is what they are looking at. It reads as "the fix did not
+            # work" rather than "you are holding yesterday's map", which sends
+            # somebody off to debug code that is already correct.
+            return FileResponse(
+                webdist / "index.html",
+                headers={"Cache-Control": "no-cache, must-revalidate"},
+            )
         return HTMLResponse(
             "<h1>cortex</h1><p>The dashboard is not built. Run "
             "<code>cd web && npm install && npm run build</code>.</p>"

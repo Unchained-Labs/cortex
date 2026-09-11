@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
-import type { Extension, ExtensionList, SkillLibrary as Library } from "../types";
+import type {
+  Extension,
+  ExtensionList,
+  SkillLibrary as Library,
+} from "../types";
 import ConnectorPanel from "../components/ConnectorPanel";
-import ExtensionEditor, { type EditorTarget } from "../components/ExtensionEditor";
+import ExtensionEditor, {
+  type EditorTarget,
+} from "../components/ExtensionEditor";
 import McpForm, { type McpTarget } from "../components/McpForm";
 import ConnectorLibrary from "../components/ConnectorLibrary";
 import SkillLibrary from "../components/SkillLibrary";
@@ -34,7 +40,10 @@ function Provides({ ext }: { ext: Extension }) {
   if (ext.kind === "mcp") {
     const d = ext.detail;
     const transport = d.transport ?? "stdio";
-    const target = transport === "http" ? d.url : [d.command, ...(d.args ?? [])].join(" ").trim();
+    const target =
+      transport === "http"
+        ? d.url
+        : [d.command, ...(d.args ?? [])].join(" ").trim();
     return (
       <span className="mono ext-detail">
         {transport}
@@ -82,13 +91,19 @@ function Row({
         {fromFile && <span className="badge">cortex.yaml</span>}
         {ext.source === "builtin" && <span className="badge">built-in</span>}
         {ext.author === "cortex" && (
-          <span className="badge accent" title="The brain wrote this skill from experience; edit it freely">
+          <span
+            className="badge accent"
+            title="The brain wrote this skill from experience; edit it freely"
+          >
             written by the brain
           </span>
         )}
         {ext.kind === "skill" && (ext.uses ?? 0) > 0 && (
           <span className="muted ext-uses">
-            used {ext.uses}×{ext.last_used ? ` · last ${new Date(ext.last_used).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
+            used {ext.uses}×
+            {ext.last_used
+              ? ` · last ${new Date(ext.last_used).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`
+              : ""}
           </span>
         )}
         <div className="ext-actions">
@@ -176,7 +191,10 @@ function Section({
 
 export default function Extend({ active }: { active: boolean }) {
   const [list, setList] = useState<ExtensionList>(EMPTY);
-  const [library, setLibrary] = useState<Library>({ skills: [], connectors: [] });
+  const [library, setLibrary] = useState<Library>({
+    skills: [],
+    connectors: [],
+  });
   const [error, setError] = useState<string | null>(null);
   const [target, setTarget] = useState<EditorTarget | null>(null);
   const [mcp, setMcp] = useState<McpTarget | null>(null);
@@ -184,11 +202,15 @@ export default function Extend({ active }: { active: boolean }) {
   const load = useCallback(() => {
     apiGet<ExtensionList>("/api/extensions")
       .then((r) => setList({ ...EMPTY, ...r }))
-      .catch((e) => setError(e instanceof Error ? e.message : "failed to load extensions"));
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "failed to load extensions"),
+      );
     // The library is what makes an empty Skills section useful, so a failure
     // here is not worth a banner — the section still lists what is installed.
     apiGet<Library>("/api/extensions/library")
-      .then((r) => setLibrary({ skills: r.skills ?? [], connectors: r.connectors ?? [] }))
+      .then((r) =>
+        setLibrary({ skills: r.skills ?? [], connectors: r.connectors ?? [] }),
+      )
       .catch(() => setLibrary({ skills: [], connectors: [] }));
   }, []);
 
@@ -199,9 +221,11 @@ export default function Extend({ active }: { active: boolean }) {
   const openNew = async (kind: "plugin" | "connector" | "skill") => {
     setError(null);
     try {
-      const s = await apiGet<{ code?: string; description?: string; instructions?: string }>(
-        `/api/extensions/scaffold?kind=${kind}`,
-      );
+      const s = await apiGet<{
+        code?: string;
+        description?: string;
+        instructions?: string;
+      }>(`/api/extensions/scaffold?kind=${kind}`);
       setTarget({
         kind,
         name: "",
@@ -221,10 +245,19 @@ export default function Extend({ active }: { active: boolean }) {
       setMcp({ ext, nonce: Date.now() });
       return;
     }
-    if (ext.kind !== "plugin" && ext.kind !== "connector" && ext.kind !== "skill") return;
+    if (
+      ext.kind !== "plugin" &&
+      ext.kind !== "connector" &&
+      ext.kind !== "skill"
+    )
+      return;
     setError(null);
     try {
-      const s = await apiGet<{ code?: string; description?: string; instructions?: string }>(
+      const s = await apiGet<{
+        code?: string;
+        description?: string;
+        instructions?: string;
+      }>(
         `/api/extensions/source?kind=${ext.kind}&name=${encodeURIComponent(ext.name)}`,
       );
       setTarget({
@@ -256,12 +289,19 @@ export default function Extend({ active }: { active: boolean }) {
   };
 
   const remove = async (ext: Extension) => {
-    if (!window.confirm(`Delete ${ext.kind} ${ext.name}? This removes it from the brain.`)) {
+    if (
+      !window.confirm(
+        `Delete ${ext.kind} ${ext.name}? This removes it from the brain.`,
+      )
+    ) {
       return;
     }
     setError(null);
     try {
-      await apiSend("DELETE", `/api/extensions/${ext.kind}/${encodeURIComponent(ext.name)}`);
+      await apiSend(
+        "DELETE",
+        `/api/extensions/${ext.kind}/${encodeURIComponent(ext.name)}`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "delete failed");
     }
@@ -280,95 +320,107 @@ export default function Extend({ active }: { active: boolean }) {
 
   return (
     <div className="extend-view">
-      <div className="wrap">
-        <div className="extend-head">
-          <h2>Extend</h2>
-          <p className="extend-lead">
-            What the agent can reach for. Four kinds of extension, from ready-made to written
-            by you — and the shapes your own notes start from.
+      <header className="view-band">
+        <div className="wrap">
+          <div className="extend-head">
+            <h2>Extend</h2>
+            <p className="extend-lead">
+              What the agent can reach for. Four kinds of extension, from
+              ready-made to written by you — and the shapes your own notes start
+              from.
+            </p>
+          </div>
+        </div>
+      </header>
+      <div className="view-scroll">
+        <div className="wrap">
+          {error && (
+            <div className="banner banner-error">
+              <span>✗ {error}</span>
+              <button className="btn btn-sm" onClick={() => setError(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {list.load_errors.length > 0 && (
+            <div className="banner banner-error extend-strip">
+              <div>
+                <p className="label">Load errors</p>
+                {list.load_errors.map((e, i) => (
+                  <p className="ext-error" key={i}>
+                    {e}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+          {list.mcp_errors.length > 0 && (
+            <div className="banner banner-error extend-strip">
+              <div>
+                <p className="label">MCP errors</p>
+                {list.mcp_errors.map((e, i) => (
+                  <p className="ext-error" key={i}>
+                    {e}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Section
+            title="Plugins"
+            blurb="Python functions the agent can call. Each one becomes a tool it can reach for in the middle of an answer."
+            items={list.plugins}
+            newLabel="+ Write a plugin"
+            onNew={() => void openNew("plugin")}
+            empty="No plugins yet. The agent still has its built-in tools."
+          >
+            {row}
+          </Section>
+          <Section
+            title="Skills"
+            blurb="Procedures the agent follows. Written in plain markdown, not code."
+            items={list.skills}
+            newLabel="Write your own"
+            onNew={() => void openNew("skill")}
+            footer={<SkillLibrary skills={library.skills} onAdded={load} />}
+          >
+            {row}
+          </Section>
+          <Section
+            title="Connectors"
+            blurb="Pull in what lives somewhere else — a calendar, a feed — and write it into the brain as files it can read."
+            items={list.connectors}
+            newLabel="Write your own"
+            onNew={() => void openNew("connector")}
+            footer={
+              <ConnectorLibrary
+                connectors={library.connectors}
+                onAdded={load}
+              />
+            }
+          >
+            {row}
+          </Section>
+          <Section
+            title="MCP servers"
+            blurb="Tools from a program you run or a service you point at. The agent uses them exactly like its own."
+            items={list.mcp_servers}
+            newLabel="+ Add a server"
+            onNew={() => setMcp({ ext: null, nonce: Date.now() })}
+            empty="No MCP servers yet."
+          >
+            {row}
+          </Section>
+
+          <TemplatesSection active={active} />
+
+          <p className="muted extend-foot">
+            Saving rebuilds the agent, so new tools are live on the next turn
+            without a restart.
           </p>
         </div>
-
-        {error && (
-          <div className="banner banner-error">
-            <span>✗ {error}</span>
-            <button className="btn btn-sm" onClick={() => setError(null)}>
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {list.load_errors.length > 0 && (
-          <div className="banner banner-error extend-strip">
-            <div>
-              <p className="label">Load errors</p>
-              {list.load_errors.map((e, i) => (
-                <p className="ext-error" key={i}>
-                  {e}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-        {list.mcp_errors.length > 0 && (
-          <div className="banner banner-error extend-strip">
-            <div>
-              <p className="label">MCP errors</p>
-              {list.mcp_errors.map((e, i) => (
-                <p className="ext-error" key={i}>
-                  {e}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <Section
-          title="Plugins"
-          blurb="Python functions the agent can call. Each one becomes a tool it can reach for in the middle of an answer."
-          items={list.plugins}
-          newLabel="+ Write a plugin"
-          onNew={() => void openNew("plugin")}
-          empty="No plugins yet. The agent still has its built-in tools."
-        >
-          {row}
-        </Section>
-        <Section
-          title="Skills"
-          blurb="Procedures the agent follows. Written in plain markdown, not code."
-          items={list.skills}
-          newLabel="Write your own"
-          onNew={() => void openNew("skill")}
-          footer={<SkillLibrary skills={library.skills} onAdded={load} />}
-        >
-          {row}
-        </Section>
-        <Section
-          title="Connectors"
-          blurb="Pull in what lives somewhere else — a calendar, a feed — and write it into the brain as files it can read."
-          items={list.connectors}
-          newLabel="Write your own"
-          onNew={() => void openNew("connector")}
-          footer={<ConnectorLibrary connectors={library.connectors} onAdded={load} />}
-        >
-          {row}
-        </Section>
-        <Section
-          title="MCP servers"
-          blurb="Tools from a program you run or a service you point at. The agent uses them exactly like its own."
-          items={list.mcp_servers}
-          newLabel="+ Add a server"
-          onNew={() => setMcp({ ext: null, nonce: Date.now() })}
-          empty="No MCP servers yet."
-        >
-          {row}
-        </Section>
-
-        <TemplatesSection active={active} />
-
-        <p className="muted extend-foot">
-          Saving rebuilds the agent, so new tools are live on the next turn without a restart.
-        </p>
       </div>
 
       {target && (
@@ -380,7 +432,12 @@ export default function Extend({ active }: { active: boolean }) {
         />
       )}
       {mcp && (
-        <McpForm key={mcp.nonce} target={mcp} onClose={() => setMcp(null)} onSaved={saved} />
+        <McpForm
+          key={mcp.nonce}
+          target={mcp}
+          onClose={() => setMcp(null)}
+          onSaved={saved}
+        />
       )}
     </div>
   );

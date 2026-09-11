@@ -1,13 +1,32 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
 import { wsSubscribe } from "../ws";
-import { CODE_JOB_KINDS, everyLabel, isoAgo, jobSentence, runWhen } from "../lib/automation";
-import type { Job, JobList, JobRun, Repo, RepoList, RepoSync, Review } from "../types";
+import {
+  CODE_JOB_KINDS,
+  everyLabel,
+  isoAgo,
+  jobSentence,
+  runWhen,
+} from "../lib/automation";
+import type {
+  Job,
+  JobList,
+  JobRun,
+  Repo,
+  RepoList,
+  RepoSync,
+  Review,
+} from "../types";
 import RepoForm, { type RepoTarget } from "../components/RepoForm";
 import ReviewForm, { type ReviewTarget } from "../components/ReviewForm";
 import { Menu, MenuItem } from "../components/Menu";
 
-const NO_REPOS: RepoList = { repos: [], providers: [], token_envs: {}, env_path: "" };
+const NO_REPOS: RepoList = {
+  repos: [],
+  providers: [],
+  token_envs: {},
+  env_path: "",
+};
 const NO_JOBS: JobList = {
   jobs: [],
   suggested: [],
@@ -42,7 +61,8 @@ function RunStatus({ job, running }: { job: Job; running: boolean }) {
   if (running) return <span className="badge accent busy">reviewing</span>;
   if (!job.enabled) return <span className="badge">paused</span>;
   if (!job.last_run) return <span className="badge">never run</span>;
-  if (job.last_status === "ok") return <span className="badge up">ran {isoAgo(job.last_run)}</span>;
+  if (job.last_status === "ok")
+    return <span className="badge up">ran {isoAgo(job.last_run)}</span>;
   return <span className="badge down">failed {isoAgo(job.last_run)}</span>;
 }
 
@@ -69,9 +89,16 @@ function RepoRow({
   return (
     <div className="auto-row">
       <div className="auto-row-head">
-        <p className={repo.enabled ? "auto-sentence" : "auto-sentence auto-off"}>
+        <p
+          className={repo.enabled ? "auto-sentence" : "auto-sentence auto-off"}
+        >
           <span className="mono">{repo.name}</span>
-          <a className="repo-link" href={repo.url} target="_blank" rel="noreferrer">
+          <a
+            className="repo-link"
+            href={repo.url}
+            target="_blank"
+            rel="noreferrer"
+          >
             {repo.slug}
           </a>
           {repo.branch && <span className="muted"> · {repo.branch}</span>}
@@ -90,7 +117,9 @@ function RepoRow({
               <Menu label={`More actions for ${repo.name}`}>
                 <MenuItem onClick={() => onEdit(repo)}>Edit</MenuItem>
                 <MenuItem onClick={() => onToggle(repo, !repo.enabled)}>
-                  {repo.enabled ? "Pause — stop syncing and reviewing" : "Resume"}
+                  {repo.enabled
+                    ? "Pause — stop syncing and reviewing"
+                    : "Resume"}
                 </MenuItem>
                 <MenuItem danger onClick={() => onDelete(repo)}>
                   Remove
@@ -104,7 +133,10 @@ function RepoRow({
         <span className="mono">{repo.prefix}/</span>
         <span className="muted">
           {" "}
-          · {repo.sync_hours > 0 ? `refreshed ${everyLabel(repo.sync_hours)}` : "refreshed on request"}
+          ·{" "}
+          {repo.sync_hours > 0
+            ? `refreshed ${everyLabel(repo.sync_hours)}`
+            : "refreshed on request"}
         </span>
         {repo.head && (
           <span className="muted">
@@ -117,8 +149,9 @@ function RepoRow({
       {failed && <p className="auto-row-meta run-fail">{repo.last_detail}</p>}
       {failed && !repo.token_present && (
         <p className="auto-row-meta muted">
-          No token is set in <span className="mono">{repo.token_env}</span>. A private
-          repository needs one; put it in <span className="mono">.env</span> and sync again.
+          No token is set in <span className="mono">{repo.token_env}</span>. A
+          private repository needs one; put it in{" "}
+          <span className="mono">.env</span> and sync again.
         </p>
       )}
       {result && result.status === "ok" && (
@@ -146,7 +179,11 @@ function ReviewJobRow({
   onDelete: (job: Job) => void;
 }) {
   const failed = !running && job.last_run !== "" && job.last_status !== "ok";
-  const line = result ? result.detail || result.status : failed ? job.last_detail : "";
+  const line = result
+    ? result.detail || result.status
+    : failed
+      ? job.last_detail
+      : "";
   const ok = result ? result.status === "ok" : !failed;
   return (
     <div className="auto-row">
@@ -156,7 +193,11 @@ function ReviewJobRow({
         </p>
         <div className="auto-row-actions">
           <RunStatus job={job} running={running} />
-          <button className="btn btn-sm" onClick={() => onRun(job)} disabled={running}>
+          <button
+            className="btn btn-sm"
+            onClick={() => onRun(job)}
+            disabled={running}
+          >
             {running ? "Reviewing…" : "Review now"}
           </button>
           <Menu label={`More actions for ${job.name}`}>
@@ -171,12 +212,19 @@ function ReviewJobRow({
         </div>
       </div>
       <p className="auto-row-meta">
-        <span className="muted">Looking for {String(job.settings.focus ?? "").slice(0, 90)}</span>
+        <span className="muted">
+          Looking for {String(job.settings.focus ?? "").slice(0, 90)}
+        </span>
         {job.settings.channel ? (
-          <span className="muted"> · tells #{String(job.settings.channel)}</span>
+          <span className="muted">
+            {" "}
+            · tells #{String(job.settings.channel)}
+          </span>
         ) : null}
       </p>
-      {line && <p className={ok ? "run-ok auto-ran" : "run-fail auto-ran"}>{line}</p>}
+      {line && (
+        <p className={ok ? "run-ok auto-ran" : "run-fail auto-ran"}>{line}</p>
+      )}
     </div>
   );
 }
@@ -227,13 +275,19 @@ export default function Code({
   const loadRepos = useCallback(() => {
     apiGet<RepoList>("/api/repos")
       .then((r) => setRepos({ ...NO_REPOS, ...r }))
-      .catch((e) => setError(e instanceof Error ? e.message : "failed to load repositories"));
+      .catch((e) =>
+        setError(
+          e instanceof Error ? e.message : "failed to load repositories",
+        ),
+      );
   }, []);
   const loadJobs = useCallback(() => {
     if (!isAdmin) return;
     apiGet<JobList>("/api/jobs")
       .then((r) => setJobs({ ...NO_JOBS, ...r }))
-      .catch((e) => setError(e instanceof Error ? e.message : "failed to load reviews"));
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "failed to load reviews"),
+      );
   }, [isAdmin]);
   const loadReviews = useCallback(() => {
     apiGet<{ reviews: Review[] }>("/api/reviews")
@@ -256,7 +310,11 @@ export default function Code({
     () =>
       wsSubscribe((ev) => {
         if (ev.type === "repo_synced") loadRepos();
-        if (ev.type === "vault_changed" && ev.vault === "shared" && ev.path.startsWith("reviews/")) {
+        if (
+          ev.type === "vault_changed" &&
+          ev.vault === "shared" &&
+          ev.path.startsWith("reviews/")
+        ) {
           loadReviews();
         }
       }),
@@ -274,7 +332,9 @@ export default function Code({
       setSyncResults((r) => ({ ...r, [repo.name]: result }));
       loadRepos();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "the sync could not be started");
+      setError(
+        e instanceof Error ? e.message : "the sync could not be started",
+      );
     } finally {
       setSyncing(null);
     }
@@ -286,7 +346,9 @@ export default function Code({
       await apiSend("PUT", "/api/repos", { repo: { ...repo, ...patch } });
       loadRepos();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "could not save that repository");
+      setError(
+        e instanceof Error ? e.message : "could not save that repository",
+      );
     }
   };
 
@@ -337,7 +399,11 @@ export default function Code({
   };
 
   const removeJob = async (job: Job) => {
-    if (!window.confirm(`Delete the scheduled review "${job.name}"? Reviews it wrote stay in the vault.`)) {
+    if (
+      !window.confirm(
+        `Delete the scheduled review "${job.name}"? Reviews it wrote stay in the vault.`,
+      )
+    ) {
       return;
     }
     setError(null);
@@ -357,194 +423,239 @@ export default function Code({
 
   return (
     <div className="automation-view code-view">
-      <div className="wrap auto-wrap">
-        <div className="auto-head">
-          <h2>Code</h2>
-          <p className="auto-lead">
-            Give the brain a repository to read and the agent can answer from your code and
-            your notes together. Schedule a review and it reads what changed, with your notes
-            open, and leaves findings for you to approve.
-          </p>
-        </div>
-
-        {error && (
-          <div className="banner banner-error">
-            <span>✗ {error}</span>
-            <button className="btn btn-sm" onClick={() => setError(null)}>
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {empty && isAdmin && (
-          <div className="start-here code-start">
-            <div className="grid three start-grid">
-              <div className="card start-card">
-                <p className="label">Step 1</p>
-                <h3>Add a repository</h3>
-                <p>
-                  GitHub or GitLab, by <span className="mono">owner/name</span>. A private one
-                  needs a token in <span className="mono">.env</span>.
-                </p>
-                <button
-                  className="btn primary"
-                  onClick={() => setRepoTarget({ repo: null, nonce: Date.now() })}
-                >
-                  Add a repository
-                </button>
-              </div>
-              <div className="card start-card">
-                <p className="label">Step 2</p>
-                <h3>Schedule a review</h3>
-                <p>
-                  Pick the repo, how often, and what to look for in your own words. The first
-                  run looks at the whole codebase; after that, only what changed.
-                </p>
-                <button className="btn" disabled title="Add a repository first">
-                  Schedule a review
-                </button>
-              </div>
-              <div className="card start-card">
-                <p className="label">Step 3</p>
-                <h3>Approve what it finds</h3>
-                <p>
-                  Each review is a note in the shared vault. Tick a finding to approve it for
-                  automated work; nothing acts on an unticked one.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {empty && !isAdmin && (
-          <p className="muted auto-none">No repositories yet — an admin adds them here.</p>
-        )}
-
-        {!empty && (
-          <section className="card auto-panel">
-            <div className="auto-panel-head">
-              <h3>Repositories</h3>
-              {isAdmin && (
-                <button
-                  className="btn btn-sm"
-                  onClick={() => setRepoTarget({ repo: null, nonce: Date.now() })}
-                >
-                  + Add a repository
-                </button>
-              )}
-            </div>
-            <p className="auto-blurb">
-              Indexed under <span className="mono">code/&lt;name&gt;/</span> and readable by
-              everyone on this brain and by the agent.
+      <header className="view-band">
+        <div className="wrap auto-wrap">
+          <div className="auto-head">
+            <h2>Code</h2>
+            <p className="auto-lead">
+              Give the brain a repository to read and the agent can answer from
+              your code and your notes together. Schedule a review and it reads
+              what changed, with your notes open, and leaves findings for you to
+              approve.
             </p>
-            <div className="auto-rows">
-              {repoList.map((repo) => (
-                <RepoRow
-                  key={repo.name}
-                  repo={repo}
-                  isAdmin={isAdmin}
-                  syncing={syncing === repo.name}
-                  result={syncResults[repo.name] ?? null}
-                  onToggle={(r, enabled) => void saveRepo(r, { enabled })}
-                  onSync={(r) => void syncRepo(r)}
-                  onEdit={(r) => setRepoTarget({ repo: r, nonce: Date.now() })}
-                  onDelete={(r) => void removeRepo(r)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {isAdmin && !empty && (
-          <section className="card auto-panel">
-            <div className="auto-panel-head">
-              <h3>Scheduled reviews</h3>
-              <button
-                className="btn btn-sm"
-                disabled={repoNames.length === 0}
-                title={repoNames.length === 0 ? "Add a repository first" : undefined}
-                onClick={() => setReviewTarget({ job: null, nonce: Date.now() })}
-              >
-                + Schedule a review
+          </div>
+        </div>
+      </header>
+      <div className="view-scroll">
+        <div className="wrap auto-wrap">
+          {error && (
+            <div className="banner banner-error">
+              <span>✗ {error}</span>
+              <button className="btn btn-sm" onClick={() => setError(null)}>
+                Dismiss
               </button>
             </div>
-            <p className="auto-blurb">
-              On an interval: sync, read what changed since the last look, pull context from
-              the brain, write <span className="mono">reviews/&lt;repo&gt;-&lt;date&gt;.md</span>.
-              Nothing new means nothing written.
+          )}
+
+          {empty && isAdmin && (
+            <div className="start-here code-start">
+              <div className="grid three start-grid">
+                <div className="card start-card">
+                  <p className="label">Step 1</p>
+                  <h3>Add a repository</h3>
+                  <p>
+                    GitHub or GitLab, by{" "}
+                    <span className="mono">owner/name</span>. A private one
+                    needs a token in <span className="mono">.env</span>.
+                  </p>
+                  <button
+                    className="btn primary"
+                    onClick={() =>
+                      setRepoTarget({ repo: null, nonce: Date.now() })
+                    }
+                  >
+                    Add a repository
+                  </button>
+                </div>
+                <div className="card start-card">
+                  <p className="label">Step 2</p>
+                  <h3>Schedule a review</h3>
+                  <p>
+                    Pick the repo, how often, and what to look for in your own
+                    words. The first run looks at the whole codebase; after
+                    that, only what changed.
+                  </p>
+                  <button
+                    className="btn"
+                    disabled
+                    title="Add a repository first"
+                  >
+                    Schedule a review
+                  </button>
+                </div>
+                <div className="card start-card">
+                  <p className="label">Step 3</p>
+                  <h3>Approve what it finds</h3>
+                  <p>
+                    Each review is a note in the shared vault. Tick a finding to
+                    approve it for automated work; nothing acts on an unticked
+                    one.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {empty && !isAdmin && (
+            <p className="muted auto-none">
+              No repositories yet — an admin adds them here.
             </p>
-            {reviewJobs.length === 0 ? (
-              <p className="muted auto-none">
-                No reviews scheduled yet. Schedule one, then press Review now to see what it
-                does before its first interval.
+          )}
+
+          {!empty && (
+            <section className="card auto-panel">
+              <div className="auto-panel-head">
+                <h3>Repositories</h3>
+                {isAdmin && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() =>
+                      setRepoTarget({ repo: null, nonce: Date.now() })
+                    }
+                  >
+                    + Add a repository
+                  </button>
+                )}
+              </div>
+              <p className="auto-blurb">
+                Indexed under <span className="mono">code/&lt;name&gt;/</span>{" "}
+                and readable by everyone on this brain and by the agent.
               </p>
-            ) : (
               <div className="auto-rows">
-                {reviewJobs.map((job) => (
-                  <ReviewJobRow
-                    key={job.name}
-                    job={job}
-                    result={runResults[job.name] ?? null}
-                    running={running === job.name}
-                    onToggle={(j, enabled) => void saveJob(j, { enabled })}
-                    onRun={(j) => void runJob(j)}
-                    onEdit={(j) => setReviewTarget({ job: j, nonce: Date.now() })}
-                    onDelete={(j) => void removeJob(j)}
+                {repoList.map((repo) => (
+                  <RepoRow
+                    key={repo.name}
+                    repo={repo}
+                    isAdmin={isAdmin}
+                    syncing={syncing === repo.name}
+                    result={syncResults[repo.name] ?? null}
+                    onToggle={(r, enabled) => void saveRepo(r, { enabled })}
+                    onSync={(r) => void syncRepo(r)}
+                    onEdit={(r) =>
+                      setRepoTarget({ repo: r, nonce: Date.now() })
+                    }
+                    onDelete={(r) => void removeRepo(r)}
                   />
                 ))}
               </div>
-            )}
-          </section>
-        )}
+            </section>
+          )}
 
-        {(reviews.length > 0 || !empty) && (
-          <section className="card auto-panel">
-            <div className="auto-panel-head">
-              <h3>Reviews</h3>
-            </div>
-            <p className="auto-blurb">
-              Newest first. Open one and tick a finding to approve it; an agent may then act on
-              it through <span className="mono">approved_findings</span>.
-            </p>
-            {reviews.length === 0 ? (
-              <p className="muted auto-none">No reviews yet.</p>
-            ) : (
-              <div className="auto-rows">
-                {reviews.map((r) => (
-                  <div className="auto-row review-row" key={r.path}>
-                    <div className="auto-row-head">
-                      <p className="auto-sentence">
-                        <button className="link-btn" onClick={() => onVaultPath(r.path)}>
-                          {r.title || r.name}
-                        </button>
-                      </p>
-                      <div className="auto-row-actions">
-                        <Severities r={r} />
-                        <button className="btn btn-sm" onClick={() => onVaultPath(r.path)}>
-                          Open
-                        </button>
-                      </div>
-                    </div>
-                    <p className="auto-row-meta">
-                      <span className="mono">{r.repo || "?"}</span>
-                      {r.reviewed && <span className="muted mono"> · {r.reviewed}</span>}
-                      {r.date && <span className="muted"> · {runWhen(r.date)}</span>}
-                      {r.job && <span className="muted"> · by “{r.job}”</span>}
-                    </p>
-                  </div>
-                ))}
+          {isAdmin && !empty && (
+            <section className="card auto-panel">
+              <div className="auto-panel-head">
+                <h3>Scheduled reviews</h3>
+                <button
+                  className="btn btn-sm"
+                  disabled={repoNames.length === 0}
+                  title={
+                    repoNames.length === 0
+                      ? "Add a repository first"
+                      : undefined
+                  }
+                  onClick={() =>
+                    setReviewTarget({ job: null, nonce: Date.now() })
+                  }
+                >
+                  + Schedule a review
+                </button>
               </div>
-            )}
-          </section>
-        )}
+              <p className="auto-blurb">
+                On an interval: sync, read what changed since the last look,
+                pull context from the brain, write{" "}
+                <span className="mono">
+                  reviews/&lt;repo&gt;-&lt;date&gt;.md
+                </span>
+                . Nothing new means nothing written.
+              </p>
+              {reviewJobs.length === 0 ? (
+                <p className="muted auto-none">
+                  No reviews scheduled yet. Schedule one, then press Review now
+                  to see what it does before its first interval.
+                </p>
+              ) : (
+                <div className="auto-rows">
+                  {reviewJobs.map((job) => (
+                    <ReviewJobRow
+                      key={job.name}
+                      job={job}
+                      result={runResults[job.name] ?? null}
+                      running={running === job.name}
+                      onToggle={(j, enabled) => void saveJob(j, { enabled })}
+                      onRun={(j) => void runJob(j)}
+                      onEdit={(j) =>
+                        setReviewTarget({ job: j, nonce: Date.now() })
+                      }
+                      onDelete={(j) => void removeJob(j)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
-        {!empty && (
-          <p className="muted extend-foot">
-            In Chat, ask for a review of any repository here and the agent uses the same tools.
-            The <span className="mono">code-review</span> skill under Settings › Extend spells
-            out the procedure.
-          </p>
-        )}
+          {(reviews.length > 0 || !empty) && (
+            <section className="card auto-panel">
+              <div className="auto-panel-head">
+                <h3>Reviews</h3>
+              </div>
+              <p className="auto-blurb">
+                Newest first. Open one and tick a finding to approve it; an
+                agent may then act on it through{" "}
+                <span className="mono">approved_findings</span>.
+              </p>
+              {reviews.length === 0 ? (
+                <p className="muted auto-none">No reviews yet.</p>
+              ) : (
+                <div className="auto-rows">
+                  {reviews.map((r) => (
+                    <div className="auto-row review-row" key={r.path}>
+                      <div className="auto-row-head">
+                        <p className="auto-sentence">
+                          <button
+                            className="link-btn"
+                            onClick={() => onVaultPath(r.path)}
+                          >
+                            {r.title || r.name}
+                          </button>
+                        </p>
+                        <div className="auto-row-actions">
+                          <Severities r={r} />
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => onVaultPath(r.path)}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                      <p className="auto-row-meta">
+                        <span className="mono">{r.repo || "?"}</span>
+                        {r.reviewed && (
+                          <span className="muted mono"> · {r.reviewed}</span>
+                        )}
+                        {r.date && (
+                          <span className="muted"> · {runWhen(r.date)}</span>
+                        )}
+                        {r.job && (
+                          <span className="muted"> · by “{r.job}”</span>
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {!empty && (
+            <p className="muted extend-foot">
+              In Chat, ask for a review of any repository here and the agent
+              uses the same tools. The <span className="mono">code-review</span>{" "}
+              skill under Settings › Extend spells out the procedure.
+            </p>
+          )}
+        </div>
       </div>
 
       {repoTarget && repos && (
