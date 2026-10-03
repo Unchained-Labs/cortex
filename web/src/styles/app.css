@@ -1948,3 +1948,47 @@ select { cursor: pointer; }
 }
 .pager-at { font-size: var(--ul-text-sm); color: var(--ul-muted); }
 .pager .btn[disabled] { opacity: .4; cursor: default; }
+
+/* ---- the three-part view -------------------------------------------------
+ *
+ * A view that scrolls as one region is a page scroll wearing a container: the
+ * filters, the add form and the pager all leave with the list, so the controls
+ * you are using move out from under you and you lose any sense of where you are
+ * in the set.
+ *
+ * So a view is three parts and only the middle one moves:
+ *
+ *   .view-band      the title            never moves
+ *   .view-controls  filters, add forms   never moves
+ *   .view-list      the rows             the ONLY scroller
+ *   .view-foot      the pager            never moves
+ *
+ * The page itself still cannot scroll — body is overflow:hidden and the
+ * min-height:0 chain holds — but now nothing scrolls except the thing you
+ * actually wanted to scroll. */
+.view-controls {
+  flex: none;
+  padding: var(--ul-space-5) 0 var(--ul-space-4);
+  /* min-height:0 is not enough on a flex item whose content is taller than its
+   * share: without an explicit cap a tall add-form would push the list out of
+   * the frame entirely. Half the view, and it scrolls itself past that. */
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.view-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ul-space-2) 0 var(--ul-space-5);
+}
+
+.view-foot {
+  flex: none;
+  border-top: 1px solid var(--ul-line);
+  background: var(--ul-bg);
+}
+/* The pager is inside a fixed foot now, so it does not need to stick to
+ * anything — and a sticky element inside a non-scrolling box is a no-op that
+ * reads as intent. */
+.view-foot .pager { position: static; border-top: 0; margin-top: 0; }

@@ -284,7 +284,7 @@ export default function Memory({
           </div>
         </div>
       </header>
-      <div className="view-scroll">
+      <div className="view-controls">
         <div className="wrap">
           {/* Admins read and edit this in Admin → Identity; a second read-only
            *  copy there would just be clutter. Members have no other way in. */}
@@ -360,7 +360,14 @@ export default function Memory({
               ))}
             </div>
           </div>
+        </div>
+      </div>
 
+      {/* The only thing that scrolls. Everything above it — the title, the
+          add form, the filters — and the pager below stay put, so the page
+          never moves and the controls are always where you left them. */}
+      <div className="view-list">
+        <div className="wrap">
           {byKind.map((group) => (
             <section className="mem-group" key={group.kind}>
               <h3 className="mem-kind">{group.kind}</h3>
@@ -387,15 +394,6 @@ export default function Memory({
             </section>
           ))}
 
-          <Pager
-            total={total}
-            limit={PAGE}
-            offset={offset}
-            onOffset={setOffset}
-            noun="memory"
-            plural="memories"
-          />
-
           {loaded && rows.length === 0 && !error && (
             <p className="muted mem-empty">
               {filter
@@ -406,6 +404,19 @@ export default function Memory({
                   "The agent writes here too, whenever you tell it something durable in chat."}
             </p>
           )}
+        </div>
+      </div>
+
+      <div className="view-foot">
+        <div className="wrap">
+          <Pager
+            total={total}
+            limit={PAGE}
+            offset={offset}
+            onOffset={setOffset}
+            noun="memory"
+            plural="memories"
+          />
         </div>
       </div>
     </div>
